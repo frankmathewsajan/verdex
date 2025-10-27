@@ -2,9 +2,12 @@ import { useAuth } from '@/contexts/auth-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Defs, LinearGradient, Path, Stop, Svg } from 'react-native-svg';
+import { Line, Path, Svg } from 'react-native-svg';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CHART_WIDTH = SCREEN_WIDTH - 80;
 
 interface SoilReading {
   id: string;
@@ -16,16 +19,52 @@ interface SoilReading {
   recorded_at: string;
 }
 
+interface PredictionData {
+  display_name: string;
+  current_value: number | null;
+  forecast: number[];
+  statistics: {
+    max: number | null;
+    mean: number | null;
+    min: number | null;
+    range: number | null;
+    std: number | null;
+    trend: string | null;
+    trend_strength: number | null;
+  };
+  status: string | null;
+}
+
+interface PredictionResponse {
+  cleaned: {
+    success: boolean;
+    timestamp: string;
+    data_points: number | null;
+    data_source: string | null;
+    input_steps: number | null;
+    forecast_steps: number | null;
+    predictions: {
+      nitrogen?: PredictionData;
+      phosphorus?: PredictionData;
+      potassium?: PredictionData;
+      ph?: PredictionData;
+    };
+  };
+}
+
+type NutrientType = 'nitrogen' | 'phosphorus' | 'potassium' | 'ph';
+
 export default function DashboardScreen() {
   const { signOut } = useAuth();
   const [soilData, setSoilData] = useState<SoilReading | null>(null);
+  const [predictionData, setPredictionData] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [selectedNutrient, setSelectedNutrient] = useState<NutrientType>('nitrogen');
 
   const fetchSoilReadings = async (silent = false) => {
     try {
-      // Only show loading state on initial load or manual refresh
       if (!silent) {
         setLoading(true);
       }
@@ -61,7 +100,6 @@ export default function DashboardScreen() {
       }
     } catch (err) {
       console.error('Error fetching soil readings:', err);
-      // Only show error on initial load, silently fail on background updates
       if (!silent) {
         setError('Failed to load soil readings');
       }
@@ -72,15 +110,99 @@ export default function DashboardScreen() {
     }
   };
 
+  const fetchPredictions = async (silent = false) => {
+    try {
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY;
+      
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/predict`,
+        {
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        // Silently fail if prediction API is down, don't crash the app
+        console.warn(`Prediction API returned ${response.status}, continuing without predictions`);
+        return;
+      }
+
+      const data: PredictionResponse = await response.json();
+      
+      // Validate response structure
+      if (data?.cleaned?.predictions) {
+        setPredictionData(data);
+      }
+    } catch (err) {
+      // Silently fail - predictions are optional, don't disrupt main readings
+      console.error('Error fetching predictions:', err);
+    }
+  };
+
   useEffect(() => {
-    // Initial load
     fetchSoilReadings(false);
+    fetchPredictions(false);
     
-    // Refresh data every 30 seconds silently (don't show loading)
-    const interval = setInterval(() => fetchSoilReadings(true), 30000);
+    const interval = setInterval(() => {
+      fetchSoilReadings(true);
+      fetchPredictions(true);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, []);
+
+  const generateChartPath = (data: number[], width: number, height: number) => {
+    if (!data || data.length === 0) return '';
+    
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    const xStep = width / (data.length - 1 || 1);
+    
+    const points = data.map((value, index) => {
+      const x = index * xStep;
+      const y = height - ((value - min) / range) * height;
+      return `${x},${y}`;
+    });
+    
+    return `M ${points.join(' L ')}`;
+  };
+
+  const getNutrientConfig = (type: NutrientType) => {
+    const configs = {
+      nitrogen: { label: 'Nitrogen (N)', color: '#fb444a', icon: 'leaf' as const, unit: 'ppm' },
+      phosphorus: { label: 'Phosphorus (P)', color: '#0bda95', icon: 'flask' as const, unit: 'ppm' },
+      potassium: { label: 'Potassium (K)', color: '#ffa500', icon: 'nutrition' as const, unit: 'ppm' },
+      ph: { label: 'pH Level', color: '#00bfff', icon: 'water' as const, unit: '' },
+    };
+    return configs[type];
+  };
+
+  const getCurrentValue = (type: NutrientType) => {
+    if (!soilData) return null;
+    const map = {
+      nitrogen: soilData.nitrogen,
+      phosphorus: soilData.phosphorus,
+      potassium: soilData.potassium,
+      ph: soilData.ph_level,
+    };
+    return map[type];
+  };
+
+  const removeEmojis = (text: string) => {
+    // Remove emojis and other symbols, keeping only letters, numbers, spaces, and basic punctuation
+    return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{238C}-\u{2454}\u{20D0}-\u{20FF}\u{FE0F}]/gu, '').trim();
+  };
+
+  const isTrendIncreasing = (trend: string | null) => {
+    if (!trend) return false;
+    const normalizedTrend = trend.toLowerCase();
+    return normalizedTrend.includes('increas') || normalizedTrend.includes('up') || normalizedTrend.includes('rising');
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -99,6 +221,10 @@ export default function DashboardScreen() {
       ]
     );
   };
+
+  const selectedPrediction = predictionData?.cleaned.predictions[selectedNutrient];
+  const config = getNutrientConfig(selectedNutrient);
+  const currentValue = getCurrentValue(selectedNutrient);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -136,27 +262,39 @@ export default function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Current Readings</Text>
-              <TouchableOpacity onPress={() => fetchSoilReadings(false)}>
+              <TouchableOpacity onPress={() => { fetchSoilReadings(false); fetchPredictions(false); }}>
                 <Ionicons name="refresh" size={20} color="#9e9c93" />
               </TouchableOpacity>
             </View>
             <View style={styles.grid}>
-              <View style={styles.card}>
+              <TouchableOpacity 
+                style={[styles.card, selectedNutrient === 'nitrogen' && styles.cardSelected]}
+                onPress={() => setSelectedNutrient('nitrogen')}
+              >
                 <Text style={styles.cardLabel}>Nitrogen (N)</Text>
                 <Text style={styles.cardValue}>{soilData.nitrogen} ppm</Text>
-              </View>
-              <View style={styles.card}>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.card, selectedNutrient === 'phosphorus' && styles.cardSelected]}
+                onPress={() => setSelectedNutrient('phosphorus')}
+              >
                 <Text style={styles.cardLabel}>Phosphorus (P)</Text>
                 <Text style={styles.cardValue}>{soilData.phosphorus} ppm</Text>
-              </View>
-              <View style={styles.card}>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.card, selectedNutrient === 'potassium' && styles.cardSelected]}
+                onPress={() => setSelectedNutrient('potassium')}
+              >
                 <Text style={styles.cardLabel}>Potassium (K)</Text>
                 <Text style={styles.cardValue}>{soilData.potassium} ppm</Text>
-              </View>
-              <View style={styles.card}>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.card, selectedNutrient === 'ph' && styles.cardSelected]}
+                onPress={() => setSelectedNutrient('ph')}
+              >
                 <Text style={styles.cardLabel}>pH Level</Text>
                 <Text style={styles.cardValue}>{soilData.ph_level.toFixed(1)}</Text>
-              </View>
+              </TouchableOpacity>
             </View>
             <Text style={styles.timestamp}>
               Last updated: {new Date(soilData.recorded_at).toLocaleString()}
@@ -164,136 +302,141 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* 24-Hour Trends */}
-        {soilData && !loading && (
-        <View style={styles.section}>
-          <View style={styles.chartCard}>
-            <Text style={styles.chartLabel}>24-Hour Trends</Text>
-            <Text style={styles.chartTitle}>Nitrogen</Text>
-            <View style={styles.trendRow}>
-              <Text style={styles.trendText}>Last 24h</Text>
-              <View style={styles.trendValue}>
-                <Ionicons name="arrow-up" size={16} color="#0bda95" />
-                <Text style={styles.trendPositive}>+2.5%</Text>
+        {/* Forecast Chart */}
+        {soilData && !loading && selectedPrediction && (
+          <View style={styles.section}>
+            <View style={styles.chartCard}>
+              <View style={styles.chartHeader}>
+                <Ionicons name={config.icon} size={28} color={config.color} />
+                <View style={styles.chartHeaderText}>
+                  <Text style={styles.chartLabel}>Forecast</Text>
+                  <Text style={[styles.chartTitle, { color: config.color }]}>{config.label}</Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.chartContainer}>
-              <Svg height={150} width="100%" viewBox="0 0 472 150">
-                <Defs>
-                  <LinearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor="#fb444a" stopOpacity="0.4" />
-                    <Stop offset="1" stopColor="#fb444a" stopOpacity="0" />
-                  </LinearGradient>
-                </Defs>
-                <Path
-                  d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V149H0V109Z"
-                  fill="url(#grad)"
-                />
-                <Path
-                  d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25"
-                  stroke="#fb444a"
-                  strokeWidth="3"
-                  fill="none"
-                  strokeLinecap="round"
-                />
-              </Svg>
-              <View style={styles.chartLabels}>
-                <Text style={styles.chartLabelText}>-24h</Text>
-                <Text style={styles.chartLabelText}>-18h</Text>
-                <Text style={styles.chartLabelText}>-12h</Text>
-                <Text style={styles.chartLabelText}>-6h</Text>
-                <Text style={styles.chartLabelText}>Now</Text>
+              
+              {/* Current Value */}
+              <View style={styles.currentValueRow}>
+                <Text style={styles.currentValueLabel}>Current</Text>
+                <Text style={styles.currentValueText}>
+                  {currentValue !== null ? currentValue.toFixed(1) : '--'} {config.unit}
+                </Text>
+              </View>
+
+              {/* Trend Info */}
+              {selectedPrediction.statistics.trend && (
+                <View style={styles.trendRow}>
+                  <Text style={styles.trendText}>Trend</Text>
+                  <View style={styles.trendValue}>
+                    <Ionicons 
+                      name={isTrendIncreasing(selectedPrediction.statistics.trend) ? 'arrow-up' : 'arrow-down'} 
+                      size={16} 
+                      color={isTrendIncreasing(selectedPrediction.statistics.trend) ? '#0bda95' : '#fb444a'} 
+                    />
+                    <Text style={isTrendIncreasing(selectedPrediction.statistics.trend) ? styles.trendPositive : styles.trendNegative}>
+                      {removeEmojis(selectedPrediction.statistics.trend)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Chart */}
+              <View style={styles.chartContainer}>
+                <Svg height={150} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 150`}>
+                  {selectedPrediction.forecast.length > 0 && (
+                    <>
+                      <Path
+                        d={generateChartPath(selectedPrediction.forecast, CHART_WIDTH, 150)}
+                        stroke={config.color}
+                        strokeWidth="3"
+                        fill="none"
+                        strokeLinecap="round"
+                      />
+                      {/* Grid lines */}
+                      <Line x1="0" y1="37.5" x2={CHART_WIDTH} y2="37.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                      <Line x1="0" y1="75" x2={CHART_WIDTH} y2="75" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                      <Line x1="0" y1="112.5" x2={CHART_WIDTH} y2="112.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                    </>
+                  )}
+                </Svg>
+                <View style={styles.chartLabels}>
+                  <Text style={styles.chartLabelText}>Now</Text>
+                  <Text style={styles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 4)}h</Text>
+                  <Text style={styles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 2)}h</Text>
+                  <Text style={styles.chartLabelText}>+{Math.floor(3 * selectedPrediction.forecast.length / 4)}h</Text>
+                  <Text style={styles.chartLabelText}>+{selectedPrediction.forecast.length}h</Text>
+                </View>
+              </View>
+
+              {/* Statistics */}
+              <View style={styles.statsGrid}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Min</Text>
+                  <Text style={styles.statValue}>
+                    {selectedPrediction.statistics.min?.toFixed(1) || '--'} {config.unit}
+                  </Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Mean</Text>
+                  <Text style={styles.statValue}>
+                    {selectedPrediction.statistics.mean?.toFixed(1) || '--'} {config.unit}
+                  </Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Text style={styles.statLabel}>Max</Text>
+                  <Text style={styles.statValue}>
+                    {selectedPrediction.statistics.max?.toFixed(1) || '--'} {config.unit}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
-        </View>
         )}
 
-        {/* 10-Hour Forecast */}
-        {soilData && !loading && (
-        <View style={styles.section}>
-          <View style={styles.chartCard}>
-            <Text style={styles.chartLabel}>10-Hour Forecast</Text>
-            <Text style={styles.chartTitle}>Nitrogen</Text>
-            <View style={styles.trendRow}>
-              <Text style={styles.trendText}>Next 10h</Text>
-              <View style={styles.trendValue}>
-                <Ionicons name="arrow-down" size={16} color="#fb444a" />
-                <Text style={styles.trendNegative}>-1.8%</Text>
-              </View>
-            </View>
-            <View style={styles.chartContainer}>
-              <Svg height={150} width="100%" viewBox="0 0 472 150">
-                <Path
-                  d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25"
-                  stroke="#e0daca"
-                  strokeWidth="3"
-                  fill="none"
-                  strokeDasharray="8,8"
-                  strokeLinecap="round"
-                />
-              </Svg>
-              <View style={styles.chartLabels}>
-                <Text style={styles.chartLabelText}>Now</Text>
-                <Text style={styles.chartLabelText}>+2h</Text>
-                <Text style={styles.chartLabelText}>+4h</Text>
-                <Text style={styles.chartLabelText}>+6h</Text>
-                <Text style={styles.chartLabelText}>+10h</Text>
+        {/* Predictions Not Available Message */}
+        {soilData && !loading && !selectedPrediction && (
+          <View style={styles.section}>
+            <View style={styles.chartCard}>
+              <View style={styles.centerContent}>
+                <Ionicons name="cloud-offline-outline" size={48} color="#9e9c93" />
+                <Text style={styles.unavailableTitle}>Predictions Unavailable</Text>
+                <Text style={styles.unavailableText}>
+                  The forecast service is currently offline. Current readings are still available above.
+                </Text>
               </View>
             </View>
           </View>
-        </View>
-        )}
-
-        {/* Alerts */}
-        {soilData && !loading && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Alerts</Text>
-          <TouchableOpacity style={styles.alertCard}>
-            <View style={styles.alertIcon}>
-              <Ionicons name="warning" size={24} color="#fb444a" />
-            </View>
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>Low Nitrogen Detected</Text>
-              <Text style={styles.alertTime}>5 minutes ago</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.alertCard}>
-            <View style={styles.alertIcon}>
-              <Ionicons name="flask" size={24} color="#fb444a" />
-            </View>
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>pH Unbalanced</Text>
-              <Text style={styles.alertTime}>2 hours ago</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
-          </TouchableOpacity>
-        </View>
         )}
 
         {/* Key Metrics */}
         {soilData && !loading && (
-        <View style={[styles.section, { paddingBottom: 24 }]}>
-          <Text style={styles.sectionTitle}>Key Metrics</Text>
-          <View style={styles.metricsGrid}>
-            <View style={styles.metricCard}>
-              <Ionicons name="water" size={32} color="#9e9c93" />
-              <Text style={styles.metricValue}>45%</Text>
-              <Text style={styles.metricLabel}>Moisture</Text>
-            </View>
-            <View style={styles.metricCard}>
-              <Ionicons name="thermometer" size={32} color="#9e9c93" />
-              <Text style={styles.metricValue}>18°C</Text>
-              <Text style={styles.metricLabel}>Temperature</Text>
-            </View>
-            <View style={styles.metricCard}>
-              <Ionicons name="flash" size={32} color="#9e9c93" />
-              <Text style={styles.metricValue}>1.2</Text>
-              <Text style={styles.metricLabel}>EC (dS/m)</Text>
-            </View>
+          <View style={[styles.section, { paddingBottom: 24 }]}>
+            <Text style={styles.sectionTitle}>Statistics</Text>
+            {selectedPrediction && (
+              <View style={styles.metricsGrid}>
+                <View style={styles.metricCard}>
+                  <Ionicons name="trending-up" size={32} color="#9e9c93" />
+                  <Text style={styles.metricValue}>
+                    {selectedPrediction.statistics.range?.toFixed(1) || '--'}
+                  </Text>
+                  <Text style={styles.metricLabel}>Range</Text>
+                </View>
+                <View style={styles.metricCard}>
+                  <Ionicons name="stats-chart" size={32} color="#9e9c93" />
+                  <Text style={styles.metricValue}>
+                    {selectedPrediction.statistics.std?.toFixed(2) || '--'}
+                  </Text>
+                  <Text style={styles.metricLabel}>Std Dev</Text>
+                </View>
+                <View style={styles.metricCard}>
+                  <Ionicons name="pulse" size={32} color="#9e9c93" />
+                  <Text style={styles.metricValue}>
+                    {predictionData?.cleaned.data_points || '--'}
+                  </Text>
+                  <Text style={styles.metricLabel}>Data Points</Text>
+                </View>
+              </View>
+            )}
           </View>
-        </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -349,6 +492,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     width: '47%',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  cardSelected: {
+    borderColor: '#fb444a',
   },
   cardLabel: {
     fontSize: 16,
@@ -365,16 +513,43 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 24,
   },
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  chartHeaderText: {
+    flex: 1,
+  },
   chartLabel: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#9e9c93',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   chartTitle: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#e0daca',
-    marginBottom: 8,
+  },
+  currentValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#303135',
+    borderRadius: 6,
+  },
+  currentValueLabel: {
+    fontSize: 14,
+    color: '#9e9c93',
+  },
+  currentValueText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#e0daca',
   },
   trendRow: {
     flexDirection: 'row',
@@ -389,16 +564,19 @@ const styles = StyleSheet.create({
   trendValue: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
   trendPositive: {
     fontSize: 16,
     fontWeight: '500',
     color: '#0bda95',
+    textTransform: 'capitalize',
   },
   trendNegative: {
     fontSize: 16,
     fontWeight: '500',
     color: '#fb444a',
+    textTransform: 'capitalize',
   },
   chartContainer: {
     marginTop: 16,
@@ -413,35 +591,27 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#9e9c93',
   },
-  alertCard: {
+  statsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#46474a',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    gap: 16,
+    gap: 12,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#303135',
   },
-  alertIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  alertContent: {
+  statItem: {
     flex: 1,
+    alignItems: 'center',
   },
-  alertTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#e0daca',
+  statLabel: {
+    fontSize: 12,
+    color: '#9e9c93',
     marginBottom: 4,
   },
-  alertTime: {
-    fontSize: 14,
-    color: '#9e9c93',
+  statValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#e0daca',
   },
   metricsGrid: {
     flexDirection: 'row',
@@ -505,5 +675,23 @@ const styles = StyleSheet.create({
     color: '#9e9c93',
     marginTop: 12,
     textAlign: 'center',
+  },
+  centerContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  unavailableTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#e0daca',
+    marginTop: 8,
+  },
+  unavailableText: {
+    fontSize: 14,
+    color: '#9e9c93',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
