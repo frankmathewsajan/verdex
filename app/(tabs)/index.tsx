@@ -1,12 +1,86 @@
 import { useAuth } from '@/contexts/auth-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Defs, LinearGradient, Path, Stop, Svg } from 'react-native-svg';
 
+interface SoilReading {
+  id: string;
+  device_id: string;
+  nitrogen: number;
+  phosphorus: number;
+  potassium: number;
+  ph_level: number;
+  recorded_at: string;
+}
+
 export default function DashboardScreen() {
   const { signOut } = useAuth();
+  const [soilData, setSoilData] = useState<SoilReading | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+
+  const fetchSoilReadings = async (silent = false) => {
+    try {
+      // Only show loading state on initial load or manual refresh
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
+      
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY;
+      
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/latest-soil-readings`,
+        {
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.latest) {
+        setSoilData(data.latest);
+        if (isInitialLoad) {
+          setIsInitialLoad(false);
+        }
+      } else if (data.message) {
+        setError(data.message);
+      }
+    } catch (err) {
+      console.error('Error fetching soil readings:', err);
+      // Only show error on initial load, silently fail on background updates
+      if (!silent) {
+        setError('Failed to load soil readings');
+      }
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    // Initial load
+    fetchSoilReadings(false);
+    
+    // Refresh data every 30 seconds silently (don't show loading)
+    const interval = setInterval(() => fetchSoilReadings(true), 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSignOut = () => {
     Alert.alert(
@@ -38,30 +112,60 @@ export default function DashboardScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Current Readings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Current Readings</Text>
-          <View style={styles.grid}>
-            <View style={styles.card}>
-              <Text style={styles.cardLabel}>Nitrogen (N)</Text>
-              <Text style={styles.cardValue}>120 ppm</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardLabel}>Phosphorus (P)</Text>
-              <Text style={styles.cardValue}>55 ppm</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardLabel}>Potassium (K)</Text>
-              <Text style={styles.cardValue}>150 ppm</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardLabel}>pH Level</Text>
-              <Text style={styles.cardValue}>6.8</Text>
-            </View>
+        {/* Loading State */}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#fb444a" />
+            <Text style={styles.loadingText}>Loading soil readings...</Text>
           </View>
-        </View>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={48} color="#fb444a" />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => fetchSoilReadings(false)}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Current Readings */}
+        {soilData && !loading && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Current Readings</Text>
+              <TouchableOpacity onPress={() => fetchSoilReadings(false)}>
+                <Ionicons name="refresh" size={20} color="#9e9c93" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.grid}>
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>Nitrogen (N)</Text>
+                <Text style={styles.cardValue}>{soilData.nitrogen} ppm</Text>
+              </View>
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>Phosphorus (P)</Text>
+                <Text style={styles.cardValue}>{soilData.phosphorus} ppm</Text>
+              </View>
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>Potassium (K)</Text>
+                <Text style={styles.cardValue}>{soilData.potassium} ppm</Text>
+              </View>
+              <View style={styles.card}>
+                <Text style={styles.cardLabel}>pH Level</Text>
+                <Text style={styles.cardValue}>{soilData.ph_level.toFixed(1)}</Text>
+              </View>
+            </View>
+            <Text style={styles.timestamp}>
+              Last updated: {new Date(soilData.recorded_at).toLocaleString()}
+            </Text>
+          </View>
+        )}
 
         {/* 24-Hour Trends */}
+        {soilData && !loading && (
         <View style={styles.section}>
           <View style={styles.chartCard}>
             <Text style={styles.chartLabel}>24-Hour Trends</Text>
@@ -103,8 +207,10 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+        )}
 
         {/* 10-Hour Forecast */}
+        {soilData && !loading && (
         <View style={styles.section}>
           <View style={styles.chartCard}>
             <Text style={styles.chartLabel}>10-Hour Forecast</Text>
@@ -137,8 +243,10 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+        )}
 
         {/* Alerts */}
+        {soilData && !loading && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Alerts</Text>
           <TouchableOpacity style={styles.alertCard}>
@@ -162,8 +270,10 @@ export default function DashboardScreen() {
             <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
           </TouchableOpacity>
         </View>
+        )}
 
         {/* Key Metrics */}
+        {soilData && !loading && (
         <View style={[styles.section, { paddingBottom: 24 }]}>
           <Text style={styles.sectionTitle}>Key Metrics</Text>
           <View style={styles.metricsGrid}>
@@ -184,6 +294,7 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -217,11 +328,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#e0daca',
-    marginBottom: 12,
   },
   grid: {
     flexDirection: 'row',
@@ -347,5 +463,47 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontSize: 11,
     color: '#9e9c93',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#9e9c93',
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#fb444a',
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#fb444a',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  timestamp: {
+    fontSize: 12,
+    color: '#9e9c93',
+    marginTop: 12,
+    textAlign: 'center',
   },
 });

@@ -1,37 +1,35 @@
 # SOIL.OS Authentication Setup
 
-This app includes a complete authentication flow with login, signup, and forgot password screens, **with protected routes using Expo Router v5** and **Firebase Authentication fully configured**.
+This app includes a complete authentication flow with login and forgot password screens, **with protected routes using Expo Router v5** and **Supabase Authentication fully configured**.
 
 ## Features Implemented
 
 ✅ Login screen with email/password
-✅ Signup screen with password confirmation  
 ✅ Forgot password screen with email reset
 ✅ Password visibility toggle
 ✅ Auth context for state management
 ✅ **Protected routes with Stack.Protected**
 ✅ **Automatic redirects based on auth state**
 ✅ Sign out functionality
-✅ **Firebase Authentication fully integrated**
+✅ **Supabase Authentication fully integrated**
 ✅ **AsyncStorage persistence for auth state**
 ✅ Error handling with user-friendly alerts
 ✅ Loading states on buttons
 ✅ UI matches the design reference
 
-## Firebase Configuration
+## Supabase Configuration
 
-Firebase is **fully set up and ready to use**:
+Supabase is **fully set up and ready to use**:
 
-- ✅ Firebase app initialized with your project config
+- ✅ Supabase client initialized
 - ✅ Authentication with email/password enabled
 - ✅ AsyncStorage persistence for React Native
 - ✅ Auth state listener active
 - ✅ Password reset email functionality
 
-### Current Firebase Project
-- Project: `verdex-soil`
-- Auth Domain: `verdex-soil.firebaseapp.com`
-- Region: Auto-configured
+### Current Supabase Project
+- Project URL: `https://kdlhvlpoldivrweyjrfg.supabase.co`
+- Configuration: `.env.local`
 
 ## Protected Routes Implementation
 
@@ -54,7 +52,7 @@ The app uses Expo Router v5's `Stack.Protected` feature to prevent unauthorized 
 
 ### How It Works
 
-1. **User not logged in**: Can only access `(auth)` screens (login, signup, forgot password)
+1. **User not logged in**: Can only access `(auth)` screens (login, forgot password)
 2. **User logged in**: Can only access `(tabs)` screens (dashboard, history, device, help)
 3. **Automatic redirects**: If user tries to access unauthorized route, they're redirected to anchor route `(tabs)`
 4. **Index route**: Checks auth state and redirects appropriately
@@ -62,44 +60,66 @@ The app uses Expo Router v5's `Stack.Protected` feature to prevent unauthorized 
 ## File Structure
 
 ```
-app/
-├── index.tsx                    # Root redirect to login/tabs
-├── _layout.tsx                  # Root layout with AuthProvider
-├── (auth)/
-│   ├── _layout.tsx             # Auth stack navigator
-│   ├── login.tsx               # Login screen
-│   ├── signup.tsx              # Signup screen
-│   └── forgot-password.tsx     # Password reset screen
-└── (tabs)/                      # Protected tab navigation
+utils/
+└── supabase.ts             # Supabase client configuration
 
 contexts/
-└── auth-context.tsx            # Authentication context and hooks
+└── auth-context.tsx        # Authentication context and hooks
 
-config/
-└── firebase.ts                 # Firebase configuration (to be set up)
+app/
+├── index.tsx               # Root redirect to login/tabs
+├── _layout.tsx             # Root layout with AuthProvider
+├── (auth)/
+│   ├── _layout.tsx        # Auth stack navigator
+│   ├── login.tsx          # Login screen
+│   └── forgot-password.tsx # Password reset screen
+└── (tabs)/                 # Protected tab navigation
+
+.env.local                  # Environment variables (Supabase keys)
 ```
 
-## Next Steps: Firebase Setup
+## Environment Variables
 
-### ✅ COMPLETED - Firebase is Ready!
+The app uses environment variables stored in `.env.local`:
 
-Firebase Authentication is fully configured and working. You can now:
+```env
+EXPO_PUBLIC_SUPABASE_URL=https://kdlhvlpoldivrweyjrfg.supabase.co
+EXPO_PUBLIC_SUPABASE_KEY=<your-anon-key>
+```
 
-1. **Create accounts** - Sign up with email/password
-2. **Sign in** - Login with existing accounts
-3. **Reset passwords** - Use forgot password feature
-4. **Stay signed in** - Auth persists with AsyncStorage
-5. **Sign out** - Logout from dashboard
+## Supabase Setup
 
-### Enable Email/Password Auth in Firebase Console
+### ✅ COMPLETED - Supabase is Ready!
+
+Supabase Authentication is fully configured and working. You can now:
+
+1. **Sign in** - Login with existing accounts
+2. **Reset passwords** - Use forgot password feature
+3. **Stay signed in** - Auth persists with AsyncStorage
+4. **Sign out** - Logout from dashboard
+
+### Enable Email/Password Auth in Supabase Dashboard
 
 To use authentication, ensure Email/Password is enabled:
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Select your project: `verdex-soil`
-3. Go to **Authentication** → **Sign-in method**
-4. Enable **Email/Password** provider
+1. Go to [Supabase Dashboard](https://supabase.com/dashboard/project/kdlhvlpoldivrweyjrfg)
+2. Go to **Authentication** → **Providers**
+3. Enable **Email** provider
+4. Configure email templates (optional)
 5. Save changes
+
+### Create User Accounts
+
+Since signup is disabled in the UI, create users via:
+
+1. **Supabase Dashboard**: Authentication → Users → Add User
+2. **SQL Editor**: 
+   ```sql
+   -- Create a new user with email/password
+   INSERT INTO auth.users (email, encrypted_password, email_confirmed_at)
+   VALUES ('user@example.com', crypt('password123', gen_salt('bf')), now());
+   ```
+3. **Supabase API** or CLI
 
 That's it! The app is ready to authenticate users.
 
@@ -140,8 +160,8 @@ The `useAuth()` hook provides:
 - `user` - Current user object or null
 - `isLoading` - Loading state
 - `signIn(email, password)` - Sign in method
-- `signUp(email, password)` - Sign up method
 - `signOut()` - Sign out method
+- `resetPassword(email)` - Password reset method
 
 ## Example Usage
 

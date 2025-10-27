@@ -1,11 +1,4 @@
-import { auth } from '@/config/firebase';
-import {
-    createUserWithEmailAndPassword,
-    signOut as firebaseSignOut,
-    onAuthStateChanged,
-    sendPasswordResetEmail,
-    signInWithEmailAndPassword
-} from 'firebase/auth';
+import { supabase } from '@/utils/supabase';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 interface User {
@@ -17,7 +10,6 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
@@ -29,35 +21,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-        });
-      } else {
-        setUser(null);
-      }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ? {
+        uid: session.user.id,
+        email: session.user.email ?? null,
+      } : null);
       setIsLoading(false);
     });
-    
-    return unsubscribe;
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ? {
+        uid: session.user.id,
+        email: session.user.email ?? null,
+      } : null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
-  };
-
-  const signUp = async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) throw error;
   };
 
   const signOutUser = async () => {
-    await firebaseSignOut(auth);
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   };
 
   const resetPassword = async (email: string) => {
-    await sendPasswordResetEmail(auth, email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'verdex://reset-password',
+    });
+    
+    if (error) throw error;
   };
 
   return (
@@ -66,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         isLoading,
         signIn,
-        signUp,
         signOut: signOutUser,
         resetPassword,
       }}
