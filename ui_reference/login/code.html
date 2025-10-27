@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Soil Quality Detection System - Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=VT323&amp;family=Noto+Sans:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#fb444a",
+                        "background-light": "#303135",
+                        "background-dark": "#303135",
+                    },
+                    fontFamily: {
+                        "display": ["VT323", "monospace"],
+                        "sans": ["Noto Sans", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' viewBox='0 0 4 4'%3E%3Cpath fill='%2346474a' fill-opacity='0.2' d='M1 3h1v1H1V3zm2-2h1v1H3V1z'%3E%3C/path%3E%3C/svg%3E");
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-sans">
+<div class="relative flex h-auto min-h-screen w-full flex-col items-center justify-center p-4 group/design-root overflow-x-hidden" style='font-family: "Noto Sans", sans-serif;'>
+<div class="w-full max-w-sm mx-auto">
+<h1 class="text-[#e0daca] tracking-wider text-4xl font-display text-center pb-3 pt-6">SOIL.OS v1.0</h1>
+<p class="text-[#e0daca] text-base font-normal leading-normal pb-8 pt-1 px-4 text-center font-sans">Access Your Soil Data</p>
+<div class="flex flex-col gap-4 w-full">
+<div class="flex w-full flex-col">
+<label class="flex flex-col flex-1">
+<p class="text-[#e0daca] text-base font-medium leading-normal pb-2 font-sans">Username / Email</p>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-md text-[#e0daca] focus:outline-0 focus:ring-2 focus:ring-primary/50 border-none bg-[#46474a] h-12 placeholder:text-[#e0daca]/50 p-4 text-base font-normal leading-normal shadow-inner" placeholder="Enter your username or email" value=""/>
+</label>
+</div>
+<div class="flex w-full flex-col">
+<label class="flex flex-col flex-1">
+<p class="text-[#e0daca] text-base font-medium leading-normal pb-2 font-sans">Password</p>
+<div class="flex w-full flex-1 items-stretch rounded-md shadow-inner">
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-md text-[#e0daca] focus:outline-0 focus:ring-2 focus:ring-primary/50 border-none bg-[#46474a] h-12 placeholder:text-[#e0daca]/50 p-4 rounded-r-none border-r-0 pr-2 text-base font-normal leading-normal" placeholder="Enter your password" type="password" value=""/>
+<div class="text-[#e0daca]/70 flex border-none bg-[#46474a] items-center justify-center pr-4 rounded-r-md border-l-0">
+<span class="material-symbols-outlined" style="font-size: 24px;">visibility</span>
+</div>
+</div>
+</label>
+</div>
+</div>
+<div class="w-full text-right py-3 px-1">
+<a class="text-[#e0daca] text-sm font-sans underline hover:text-primary transition-colors" href="#">Forgot Password?</a>
+</div>
+<div class="flex py-3">
+<button class="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-md h-12 px-5 flex-1 bg-primary text-white text-lg font-bold leading-normal tracking-widest font-display transition-all hover:brightness-110 active:scale-[0.98]">
+<span class="truncate">LOGIN</span>
+</button>
+</div>
+<div class="flex items-center justify-center pt-6 pb-4">
+<p class="text-[#e0daca] text-sm font-sans">Don't have an account? <a class="font-bold underline hover:text-primary transition-colors" href="#">Sign Up</a></p>
+</div>
+</div>
+</div>
+</body></html>

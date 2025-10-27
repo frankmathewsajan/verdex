@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Soil Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings:
+        'FILL' 0,
+        'wght' 400,
+        'GRAD' 0,
+        'opsz' 24
+      }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#fb444a",
+              "background-light": "#303135",
+              "background-dark": "#303135",
+              "card": "#46474a",
+              "text-main": "#e0daca",
+              "text-muted": "#9e9c93"
+            },
+            fontFamily: {
+              "display": ["Space Grotesk", "sans-serif"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-dark font-display">
+<div class="relative flex h-auto min-h-screen w-full flex-col bg-background-dark group/design-root overflow-x-hidden">
+<!-- Top App Bar -->
+<div class="flex items-center bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10 border-b border-card">
+<div class="text-text-main flex size-12 shrink-0 items-center justify-start">
+<span class="material-symbols-outlined text-3xl">grass</span>
+</div>
+<h1 class="text-text-main text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center">Soil Dashboard</h1>
+<div class="flex w-12 items-center justify-end">
+<button class="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 w-10 bg-transparent text-text-main gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+</div>
+<!-- Current Readings -->
+<div class="px-4 pt-6">
+<h2 class="text-text-main text-lg font-bold leading-tight tracking-[-0.015em] pb-3">Current Readings</h2>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-card">
+<p class="text-text-muted text-base font-medium leading-normal">Nitrogen (N)</p>
+<p class="text-text-main tracking-light text-2xl font-bold leading-tight">120 ppm</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-card">
+<p class="text-text-muted text-base font-medium leading-normal">Phosphorus (P)</p>
+<p class="text-text-main tracking-light text-2xl font-bold leading-tight">55 ppm</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-card">
+<p class="text-text-muted text-base font-medium leading-normal">Potassium (K)</p>
+<p class="text-text-main tracking-light text-2xl font-bold leading-tight">150 ppm</p>
+</div>
+<div class="flex flex-col gap-2 rounded-lg p-4 bg-card">
+<p class="text-text-muted text-base font-medium leading-normal">pH Level</p>
+<p class="text-text-main tracking-light text-2xl font-bold leading-tight">6.8</p>
+</div>
+</div>
+</div>
+<!-- 24-Hour Trends Chart -->
+<div class="px-4 pt-6">
+<div class="flex min-w-72 flex-1 flex-col gap-2 rounded-lg bg-card p-6">
+<p class="text-text-muted text-base font-medium leading-normal">24-Hour Trends</p>
+<p class="text-text-main tracking-light text-[32px] font-bold leading-tight truncate">Nitrogen</p>
+<div class="flex gap-2 items-center">
+<p class="text-text-muted text-base font-normal leading-normal">Last 24h</p>
+<p class="text-[#0bda95] text-base font-medium leading-normal flex items-center">
+<span class="material-symbols-outlined text-lg">arrow_drop_up</span>+2.5%
+                     </p>
+</div>
+<div class="flex min-h-[180px] flex-1 flex-col gap-8 py-4">
+<svg fill="none" height="148" preserveaspectratio="none" viewbox="-3 0 478 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25V149H326.769H0V109Z" fill="url(#paint0_linear_trends)"></path>
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25" stroke="#fb444a" stroke-linecap="round" stroke-width="3"></path>
+<defs>
+<lineargradient gradientunits="userSpaceOnUse" id="paint0_linear_trends" x1="236" x2="236" y1="1" y2="149">
+<stop stop-color="#fb444a" stop-opacity="0.4"></stop>
+<stop offset="1" stop-color="#fb444a" stop-opacity="0"></stop>
+</lineargradient>
+</defs>
+</svg>
+<div class="flex justify-between">
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">-24h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">-18h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">-12h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">-6h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">Now</p>
+</div>
+</div>
+</div>
+</div>
+<!-- 10-Hour Forecast Chart -->
+<div class="px-4 pt-6">
+<div class="flex min-w-72 flex-1 flex-col gap-2 rounded-lg bg-card p-6">
+<p class="text-text-muted text-base font-medium leading-normal">10-Hour Forecast</p>
+<p class="text-text-main tracking-light text-[32px] font-bold leading-tight truncate">Nitrogen</p>
+<div class="flex gap-2 items-center">
+<p class="text-text-muted text-base font-normal leading-normal">Next 10h</p>
+<p class="text-primary text-base font-medium leading-normal flex items-center">
+<span class="material-symbols-outlined text-lg">arrow_drop_down</span>-1.8%
+                     </p>
+</div>
+<div class="flex min-h-[180px] flex-1 flex-col gap-8 py-4">
+<svg fill="none" height="148" preserveaspectratio="none" viewbox="-3 0 478 150" width="100%" xmlns="http://www.w3.org/2000/svg">
+<path d="M0 109C18.1538 109 18.1538 21 36.3077 21C54.4615 21 54.4615 41 72.6154 41C90.7692 41 90.7692 93 108.923 93C127.077 93 127.077 33 145.231 33C163.385 33 163.385 101 181.538 101C199.692 101 199.692 61 217.846 61C236 61 236 45 254.154 45C272.308 45 272.308 121 290.462 121C308.615 121 308.615 149 326.769 149C344.923 149 344.923 1 363.077 1C381.231 1 381.231 81 399.385 81C417.538 81 417.538 129 435.692 129C453.846 129 453.846 25 472 25" stroke="#e0daca" stroke-dasharray="4 4" stroke-linecap="round" stroke-width="3"></path>
+</svg>
+<div class="flex justify-between">
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">Now</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">+2h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">+4h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">+6h</p>
+<p class="text-text-muted text-[13px] font-bold leading-normal tracking-[0.015em]">+10h</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Alerts -->
+<div class="px-4 pt-6">
+<h2 class="text-text-main text-lg font-bold leading-tight tracking-[-0.015em] pb-3">Alerts</h2>
+<div class="flex flex-col gap-3">
+<div class="flex items-center gap-4 rounded-lg p-4 bg-card">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20">
+<span class="material-symbols-outlined text-primary">warning</span>
+</div>
+<div class="flex flex-col flex-1">
+<p class="text-text-main font-medium">Low Nitrogen Detected</p>
+<p class="text-text-muted text-sm">5 minutes ago</p>
+</div>
+<span class="material-symbols-outlined text-text-muted">chevron_right</span>
+</div>
+<div class="flex items-center gap-4 rounded-lg p-4 bg-card">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20">
+<span class="material-symbols-outlined text-primary">science</span>
+</div>
+<div class="flex flex-col flex-1">
+<p class="text-text-main font-medium">pH Unbalanced</p>
+<p class="text-text-muted text-sm">2 hours ago</p>
+</div>
+<span class="material-symbols-outlined text-text-muted">chevron_right</span>
+</div>
+</div>
+</div>
+<!-- Key Metrics -->
+<div class="px-4 pt-6 pb-24">
+<h2 class="text-text-main text-lg font-bold leading-tight tracking-[-0.015em] pb-3">Key Metrics</h2>
+<div class="grid grid-cols-3 gap-4">
+<div class="flex flex-col items-center gap-2 rounded-lg p-4 bg-card">
+<span class="material-symbols-outlined text-text-muted text-3xl">water_drop</span>
+<p class="text-text-main text-xl font-bold">45%</p>
+<p class="text-text-muted text-xs">Moisture</p>
+</div>
+<div class="flex flex-col items-center gap-2 rounded-lg p-4 bg-card">
+<span class="material-symbols-outlined text-text-muted text-3xl">thermostat</span>
+<p class="text-text-main text-xl font-bold">18°C</p>
+<p class="text-text-muted text-xs">Temperature</p>
+</div>
+<div class="flex flex-col items-center gap-2 rounded-lg p-4 bg-card">
+<span class="material-symbols-outlined text-text-muted text-3xl">bolt</span>
+<p class="text-text-main text-xl font-bold">1.2</p>
+<p class="text-text-muted text-xs">EC (dS/m)</p>
+</div>
+</div>
+</div>
+<!-- Bottom Navigation Bar -->
+<div class="fixed bottom-0 left-0 right-0 bg-background-dark border-t border-card">
+<div class="flex justify-around p-2">
+<button class="flex flex-col items-center justify-center gap-1 w-20 text-primary">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-xs font-medium">Dashboard</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 w-20 text-text-muted">
+<span class="material-symbols-outlined">history</span>
+<span class="text-xs font-medium">History</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 w-20 text-text-muted">
+<span class="material-symbols-outlined">sensors</span>
+<span class="text-xs font-medium">Device</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-1 w-20 text-text-muted">
+<span class="material-symbols-outlined">help</span>
+<span class="text-xs font-medium">Help</span>
+</button>
+</div>
+</div>
+</div>
+</body></html>
