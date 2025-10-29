@@ -1,3 +1,5 @@
+import { useBluetooth } from '@/contexts/bluetooth-context';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as IntentLauncher from 'expo-intent-launcher';
 import React, { useEffect, useRef, useState } from 'react';
@@ -21,11 +23,22 @@ interface SensorData {
   potassium: number | null;
   pH: number | null;
   moisture: number | null;
+  // Optional fields
+  temperature?: number | null;
+  humidity?: number | null;
+  soilConductivity?: number | null;
+}
+
+interface SensorReading extends SensorData {
+  timestamp: Date;
+  deviceId: string;
+  deviceName: string;
 }
 
 export default function DeviceScreen() {
+  const { latestSensorData, isConnected, connectedDevice, connectToDevice: connectDeviceInContext, disconnectDevice: disconnectDeviceInContext } = useBluetooth();
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
-  const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
+  const [showAllDevices, setShowAllDevices] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [serialData, setSerialData] = useState<string>('');
   const [sensorData, setSensorData] = useState<SensorData>({
@@ -38,7 +51,12 @@ export default function DeviceScreen() {
     potassium: null,
     pH: null,
     moisture: null,
+    temperature: null,
+    humidity: null,
+    soilConductivity: null,
   });
+  const [sensorBatch, setSensorBatch] = useState<SensorReading[]>([]);
+  const [previousSensorData, setPreviousSensorData] = useState<SensorData | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [bluetoothState, setBluetoothState] = useState<string>('Unknown');
   const [isSerialExpanded, setIsSerialExpanded] = useState(true);
@@ -52,7 +70,20 @@ export default function DeviceScreen() {
     return () => {
       stopScanning();
     };
-  }, []);  const checkBluetoothState = async () => {
+  }, []);
+
+  // Watch for new sensor data from context and update local state + batch
+  useEffect(() => {
+    if (latestSensorData && isConnected) {
+      // Update local sensor data display
+      setSensorData(latestSensorData);
+      
+      // Add to batch if data has changed
+      addToBatch(latestSensorData);
+    }
+  }, [latestSensorData, isConnected]);
+
+  const checkBluetoothState = async () => {
     try {
       const isEnabled = await RNBluetoothClassic.isBluetoothEnabled();
       setBluetoothState(isEnabled ? 'PoweredOn' : 'PoweredOff');
@@ -296,93 +327,166 @@ export default function DeviceScreen() {
       // Stop scanning before connecting
       await stopScanning();
       
-      console.log('Connecting to Classic Bluetooth device:', deviceId);
+      console.log('🔵 Connecting to Classic Bluetooth device:', deviceId);
       const device = await RNBluetoothClassic.connectToDevice(deviceId);
       
-      setConnectedDevice(device);
+      // Use context's connectToDevice - this will persist across tab changes
+      await connectDeviceInContext(device);
+      
       setSerialData('');
       setIsSerialExpanded(true);
       
-      // Start reading Classic Bluetooth serial data
-      startReadingClassicSerial(device);
+      // Start local UI updates for serial display
+      startLocalSerialDisplay(device);
       
-      Alert.alert('Success', `Connected to ${device.name || 'device'}. Serial monitor will show data.`);
+      Alert.alert('Success', `Connected to ${device.name || 'device'}. Data streaming will continue in background.`);
     } catch (error) {
-      console.error('Connection error:', error);
+      console.error('❌ Connection error:', error);
       Alert.alert('Error', 'Failed to connect to device: ' + error);
     }
   };
 
-  const startReadingClassicSerial = async (device: BluetoothDevice) => {
-    try {
-      setIsReading(true);
-      console.log('Starting Classic Bluetooth serial reading...');
-      
-      // Subscribe to data events from Classic Bluetooth
-      const subscription = device.onDataReceived((data) => {
-        try {
-          // Data comes as string from Classic Bluetooth
-          // Format: "latitude, longitude, satelliteCount, bearing, N: nitrogen, P: phosphorus, K: potassium, pH: pH, M: moisture"
-          // Example: "18.4, 80.9, 6, 4, N: 23, P: 12, K: 25, pH: 7.5, M: 85"
-          const receivedData = data.data;
-          console.log('Received Classic data:', receivedData);
-          
-          // Parse the sensor data
-          const values = receivedData.split(',').map((v: string) => v.trim());
-          
-          if (values.length >= 4) {
-            const parsedData: SensorData = {
-              latitude: parseFloat(values[0]) || null,
-              longitude: parseFloat(values[1]) || null,
-              satelliteCount: parseInt(values[2]) || null,
-              bearing: parseFloat(values[3]) || null,
-              nitrogen: null,
-              phosphorus: null,
-              potassium: null,
-              pH: null,
-              moisture: null,
-            };
-            
-            // Parse the labeled values (N:, P:, K:, pH:, M:)
-            values.slice(4).forEach((item: string) => {
-              if (item.includes('N:')) parsedData.nitrogen = parseFloat(item.split(':')[1]) || null;
-              else if (item.includes('P:')) parsedData.phosphorus = parseFloat(item.split(':')[1]) || null;
-              else if (item.includes('K:')) parsedData.potassium = parseFloat(item.split(':')[1]) || null;
-              else if (item.includes('pH:')) parsedData.pH = parseFloat(item.split(':')[1]) || null;
-              else if (item.includes('M:')) parsedData.moisture = parseFloat(item.split(':')[1]) || null;
-            });
-            
-            setSensorData(parsedData);
-          }
-        } catch (error) {
-          console.error('Error processing Classic data:', error);
-        }
+  // This is just for local serial display, actual data reading happens in context
+  const startLocalSerialDisplay = (device: BluetoothDevice) => {
+    setIsReading(true);
+    console.log('📺 Starting local serial display...');
+    
+    // Subscribe to show data in serial monitor (optional, just for UI)
+    device.onDataReceived((data) => {
+      setSerialData(prev => {
+        const newData = prev + data.data + '\n';
+        // Keep only last 500 characters
+        return newData.slice(-500);
       });
-      
-      console.log('Classic Bluetooth serial monitor active');
-    } catch (error) {
-      console.error('Classic Bluetooth reading error:', error);
-      setIsReading(false);
-      Alert.alert('Error', 'Failed to read serial data from device');
-    }
+    });
   };
 
   const disconnectDevice = async () => {
     if (connectedDevice) {
       try {
-        await connectedDevice.disconnect();
-        setConnectedDevice(null);
+        // Save any remaining batch data before disconnecting
+        if (sensorBatch.length > 0) {
+          console.log(`💾 Saving remaining ${sensorBatch.length} readings before disconnect...`);
+          await saveBatchToSupabase(sensorBatch);
+          setSensorBatch([]);
+        }
+        
+        // Use context's disconnect - cleans up everything
+        await disconnectDeviceInContext();
+        
         setSerialData('');
         setIsReading(false);
+        setPreviousSensorData(null);
         Alert.alert('Disconnected', 'Device disconnected successfully');
       } catch (error) {
-        console.error('Disconnect error:', error);
+        console.error('❌ Disconnect error:', error);
       }
     }
   };
 
   const clearSerialData = () => {
     setSerialData('');
+  };
+
+  // Check if sensor data has changed (ignoring null values)
+  const hasDataChanged = (newData: SensorData, oldData: SensorData | null): boolean => {
+    if (!oldData) return true;
+    
+    // Check only non-null values for changes
+    const keysToCheck: (keyof SensorData)[] = [
+      'latitude', 'longitude', 'nitrogen', 'phosphorus', 
+      'potassium', 'pH', 'moisture'
+    ];
+    
+    for (const key of keysToCheck) {
+      if (newData[key] !== null && newData[key] !== oldData[key]) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Save batch to Supabase
+  const saveBatchToSupabase = async (batch: SensorReading[]) => {
+    try {
+      console.log(`Saving batch of ${batch.length} readings to Supabase...`);
+      
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.warn('No user logged in, skipping batch save');
+        return;
+      }
+
+      // Prepare data for insertion
+      const insertData = batch.map(reading => ({
+        latitude: reading.latitude,
+        longitude: reading.longitude,
+        satellite_count: reading.satelliteCount,
+        bearing: reading.bearing,
+        nitrogen: reading.nitrogen,
+        phosphorus: reading.phosphorus,
+        potassium: reading.potassium,
+        ph: reading.pH,
+        moisture: reading.moisture,
+        temperature: reading.temperature,
+        humidity: reading.humidity,
+        soil_conductivity: reading.soilConductivity,
+        device_id: reading.deviceId,
+        device_name: reading.deviceName,
+        user_id: user.id,
+        created_at: reading.timestamp.toISOString(),
+      }));
+
+      const { data, error } = await supabase
+        .from('sensor_readings')
+        .insert(insertData);
+
+      if (error) {
+        console.error('Error saving batch to Supabase:', error);
+        Alert.alert('Error', 'Failed to save sensor data: ' + error.message);
+      } else {
+        console.log(`✅ Successfully saved ${batch.length} readings to Supabase`);
+      }
+    } catch (error) {
+      console.error('Exception saving batch:', error);
+    }
+  };
+
+  // Add reading to batch and save when batch reaches 10
+  const addToBatch = (newData: SensorData) => {
+    if (!connectedDevice) return;
+    
+    // Check if data has actually changed
+    if (!hasDataChanged(newData, previousSensorData)) {
+      return;
+    }
+
+    console.log('Data changed, adding to batch...');
+    
+    const reading: SensorReading = {
+      ...newData,
+      timestamp: new Date(),
+      deviceId: connectedDevice.address,
+      deviceName: connectedDevice.name || 'ESP32_SoilData',
+    };
+
+    setSensorBatch(prevBatch => {
+      const newBatch = [...prevBatch, reading];
+      
+      // If batch reaches 10, save to Supabase
+      if (newBatch.length >= 10) {
+        console.log('Batch full (10 readings), saving to Supabase...');
+        saveBatchToSupabase(newBatch);
+        return []; // Clear batch after saving
+      }
+      
+      console.log(`Batch size: ${newBatch.length}/10`);
+      return newBatch;
+    });
+
+    setPreviousSensorData(newData);
   };
 
   const renderDevice = ({ item }: { item: ScannedDevice }) => {
@@ -420,6 +524,153 @@ export default function DeviceScreen() {
     );
   };
 
+  const renderHeader = () => (
+    <>
+      {/* Connected Device */}
+      {connectedDevice && (
+        <View style={styles.connectedSection}>
+          <Text style={styles.sectionTitle}>Connected Device</Text>
+          <View style={styles.connectedCard}>
+            <View style={styles.connectedInfo}>
+              <Ionicons name="checkmark-circle" size={24} color="#0bda95" />
+              <Text style={styles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
+            </View>
+            
+            {/* Batch Status Indicator */}
+            <View style={styles.batchStatusContainer}>
+              <View style={styles.batchStatus}>
+                <Ionicons name="cloud-upload-outline" size={16} color="#9e9c93" />
+                <Text style={styles.batchStatusText}>
+                  Batch: {sensorBatch.length}/10 readings
+                </Text>
+              </View>
+              {sensorBatch.length > 0 && (
+                <View style={styles.batchProgress}>
+                  <View style={[styles.batchProgressFill, { width: `${(sensorBatch.length / 10) * 100}%` }]} />
+                </View>
+              )}
+            </View>
+            
+            <TouchableOpacity style={styles.disconnectButton} onPress={disconnectDevice}>
+              <Text style={styles.disconnectButtonText}>Disconnect</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Scan Controls - Only show when NOT connected */}
+      {!connectedDevice && (
+        <View style={styles.scanSection}>
+          <Text style={styles.sectionTitle}>Scan for ESP32 Devices</Text>
+          
+          {/* Bluetooth State Indicator with Toggle */}
+          <View style={styles.stateIndicator}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <View style={[
+                styles.stateIcon,
+                bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
+              ]}>
+                <Ionicons 
+                  name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
+                  size={16} 
+                  color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
+                />
+              </View>
+              <Text style={styles.stateText}>
+                Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
+              </Text>
+            </View>
+            {bluetoothState === 'PoweredOff' && (
+              <TouchableOpacity 
+                style={styles.toggleBluetoothButton} 
+                onPress={toggleBluetooth}
+              >
+                <Ionicons name="settings-outline" size={16} color="#fb444a" />
+                <Text style={styles.toggleBluetoothText}>Enable</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          {/* ESP Devices Section */}
+          <View style={styles.pairedDevicesHeader}>
+            <View style={styles.scanningIndicator}>
+              {isScanning && <ActivityIndicator size="small" color="#0bda95" />}
+              <Text style={styles.sectionTitle}>Bluetooth Devices</Text>
+            </View>
+          </View>
+
+          <View style={styles.scanButtonGroup}>
+            <TouchableOpacity 
+              style={[
+                styles.refreshButton,
+                isScanning && styles.refreshButtonActive
+              ]}
+              onPress={isScanning ? stopScanning : startScanning}
+              disabled={bluetoothState !== 'PoweredOn' || !hasPermissions}
+            >
+              <Ionicons 
+                name={isScanning ? "stop-circle" : "play-circle"} 
+                size={20} 
+                color="#fff" 
+              />
+              <Text style={styles.refreshButtonText}>
+                {isScanning ? 'Stop' : 'Scan'}
+              </Text>
+            </TouchableOpacity>
+            
+            {devices.length > 0 && devices.some(d => !d.name?.toUpperCase().includes('ESP')) && (
+              <TouchableOpacity 
+                style={styles.toggleFilterButton}
+                onPress={() => setShowAllDevices(!showAllDevices)}
+              >
+                <Ionicons 
+                  name={showAllDevices ? "eye-off" : "eye"} 
+                  size={16} 
+                  color="#e0daca" 
+                />
+                <Text style={styles.toggleFilterText}>
+                  {showAllDevices ? 'Hide' : 'Show All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
+          {!hasPermissions && (
+            <Text style={styles.permissionWarning}>
+              ⚠️ Bluetooth permissions not granted
+            </Text>
+          )}
+          
+          {devices.length > 0 && (
+            <View style={styles.deviceListCount}>
+              <Text style={styles.deviceCountText}>
+                {showAllDevices ? `All Devices (${devices.length})` : `ESP Devices (${devices.filter(d => d.name?.toUpperCase().includes('ESP')).length})`}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+    </>
+  );
+
+  const renderEmptyComponent = () => {
+    if (connectedDevice) return null;
+    
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="radio-outline" size={64} color="#9e9c93" />
+        <Text style={styles.emptyText}>
+          {isScanning ? 'Searching for devices...' : 'No devices found'}
+        </Text>
+        <Text style={styles.emptySubtext}>
+          {isScanning 
+            ? 'Make sure your ESP device is powered on'
+            : 'Tap "Scan" to search for nearby Bluetooth devices'}
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -428,123 +679,22 @@ export default function DeviceScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Connected Device */}
-        {connectedDevice && (
-          <View style={styles.connectedSection}>
-            <Text style={styles.sectionTitle}>Connected Device</Text>
-            <View style={styles.connectedCard}>
-              <View style={styles.connectedInfo}>
-                <Ionicons name="checkmark-circle" size={24} color="#0bda95" />
-                <Text style={styles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
-              </View>
-              <TouchableOpacity style={styles.disconnectButton} onPress={disconnectDevice}>
-                <Text style={styles.disconnectButtonText}>Disconnect</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+      {!connectedDevice ? (
+        <FlatList
+          data={showAllDevices ? devices : devices.filter(d => d.name?.toUpperCase().includes('ESP'))}
+          renderItem={renderDevice}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={renderHeader}
+          ListEmptyComponent={renderEmptyComponent}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        />
+      ) : (
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {renderHeader()}
 
-        {/* Scan Controls - Only show when NOT connected */}
-        {!connectedDevice && (
-          <>
-            <View style={styles.scanSection}>
-              <Text style={styles.sectionTitle}>Scan for ESP32 Devices</Text>
-              
-              {/* Bluetooth State Indicator with Toggle */}
-              <View style={styles.stateIndicator}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <View style={[
-                    styles.stateIcon,
-                    bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
-                  ]}>
-                    <Ionicons 
-                      name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
-                      size={16} 
-                      color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
-                    />
-                  </View>
-                  <Text style={styles.stateText}>
-                    Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
-                  </Text>
-                </View>
-                {bluetoothState === 'PoweredOff' && (
-                  <TouchableOpacity 
-                    style={styles.toggleBluetoothButton} 
-                    onPress={toggleBluetooth}
-                  >
-                    <Ionicons name="settings-outline" size={16} color="#fb444a" />
-                    <Text style={styles.toggleBluetoothText}>Enable</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              
-              {/* ESP Devices Section */}
-              <View style={styles.pairedDevicesHeader}>
-                <View style={styles.scanningIndicator}>
-                  {isScanning && <ActivityIndicator size="small" color="#0bda95" />}
-                  <Text style={styles.sectionTitle}>Bluetooth Devices</Text>
-                </View>
-                <TouchableOpacity 
-                  style={[
-                    styles.refreshButton,
-                    isScanning && styles.refreshButtonActive
-                  ]}
-                  onPress={isScanning ? stopScanning : startScanning}
-                  disabled={bluetoothState !== 'PoweredOn' || !hasPermissions}
-                >
-                  <Ionicons 
-                    name={isScanning ? "stop-circle" : "play-circle"} 
-                    size={20} 
-                    color="#fff" 
-                  />
-                  <Text style={styles.refreshButtonText}>
-                    {isScanning ? 'Stop' : 'Scan'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              
-              {!hasPermissions && (
-                <Text style={styles.permissionWarning}>
-                  ⚠️ Bluetooth permissions not granted
-                </Text>
-              )}
-            </View>
-
-            {/* Device List */}
-            {devices.length > 0 ? (
-              <View style={styles.listSection}>
-                <View style={styles.deviceListHeader}>
-                  <Text style={styles.sectionTitle}>Available Devices ({devices.length})</Text>
-                </View>
-                <FlatList
-                  data={devices}
-                  renderItem={renderDevice}
-                  keyExtractor={(item) => item.id}
-                  contentContainerStyle={styles.listContent}
-                  showsVerticalScrollIndicator={false}
-                />
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="radio-outline" size={64} color="#9e9c93" />
-                <Text style={styles.emptyText}>
-                  {isScanning ? 'Searching for devices...' : 'No devices found'}
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  {isScanning 
-                    ? 'Make sure your ESP device is powered on'
-                    : 'Tap "Scan" to search for nearby Bluetooth devices'}
-                </Text>
-              </View>
-            )}
-          </>
-        )}
-
-        {/* Live Sensor Data - Only show when connected */}
-        {connectedDevice && (
+          {/* Live Sensor Data - Only show when connected */}
           <View style={styles.sensorDataSection}>
-
             {/* Sensor Cards Grid */}
             <View style={styles.sensorGrid}>
               {/* Latitude */}
@@ -629,8 +779,8 @@ export default function DeviceScreen() {
               </View>
             </View>
           </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -689,6 +839,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#e0daca',
   },
+  batchStatusContainer: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: '#3a3d42',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#525560',
+  },
+  batchStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  batchStatusText: {
+    fontSize: 14,
+    color: '#9e9c93',
+  },
+  batchProgress: {
+    height: 4,
+    backgroundColor: '#525560',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  batchProgressFill: {
+    height: '100%',
+    backgroundColor: '#0bda95',
+    borderRadius: 2,
+  },
   disconnectButton: {
     backgroundColor: '#fb444a',
     paddingVertical: 10,
@@ -708,13 +887,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 12,
+    marginBottom: 12,
   },
   scanningIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
+  scanButtonGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
   refreshButton: {
+    flex: 1,
     backgroundColor: '#0bda95',
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -1006,6 +1193,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     flexWrap: 'wrap',
     gap: 8,
+  },
+  toggleFilterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#46474a',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#525560',
+  },
+  toggleFilterText: {
+    fontSize: 13,
+    color: '#e0daca',
+    fontWeight: '600',
+  },
+  deviceListCount: {
+    marginBottom: 12,
+  },
+  deviceCountText: {
+    fontSize: 14,
+    color: '#9e9c93',
+    fontWeight: '500',
   },
   deviceListActions: {
     flexDirection: 'row',

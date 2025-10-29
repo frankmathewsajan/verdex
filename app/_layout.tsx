@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { BluetoothProvider } from '@/contexts/bluetooth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -38,7 +39,9 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <BluetoothProvider>
+        <RootLayoutNav />
+      </BluetoothProvider>
     </AuthProvider>
   );
 }

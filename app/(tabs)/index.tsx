@@ -1,4 +1,5 @@
 import { useAuth } from '@/contexts/auth-context';
+import { useBluetooth } from '@/contexts/bluetooth-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -8,16 +9,6 @@ import { Line, Path, Svg } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - 80;
-
-interface SoilReading {
-  id: string;
-  device_id: string;
-  nitrogen: number;
-  phosphorus: number;
-  potassium: number;
-  ph_level: number;
-  recorded_at: string;
-}
 
 interface PredictionData {
   display_name: string;
@@ -54,63 +45,58 @@ interface PredictionResponse {
 
 type NutrientType = 'nitrogen' | 'phosphorus' | 'potassium' | 'ph';
 
+interface LiveDataPoint {
+  timestamp: number;
+  nitrogen: number | null;
+  phosphorus: number | null;
+  potassium: number | null;
+  pH: number | null;
+}
+
+const MAX_LIVE_DATA_POINTS = 20;
+
 export default function DashboardScreen() {
   const { signOut } = useAuth();
-  const [soilData, setSoilData] = useState<SoilReading | null>(null);
+  const { latestSensorData, isConnected } = useBluetooth();
   const [predictionData, setPredictionData] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [selectedNutrient, setSelectedNutrient] = useState<NutrientType>('nitrogen');
   const [predictionFailCount, setPredictionFailCount] = useState(0);
   const [predictionDisabled, setPredictionDisabled] = useState(false);
+  const [liveData, setLiveData] = useState<LiveDataPoint[]>([]);
 
-  const fetchSoilReadings = async (silent = false) => {
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-      setError(null);
-      
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY;
-      
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/latest-soil-readings`,
-        {
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
+  // Add new Bluetooth data to live chart
+  useEffect(() => {
+    if (isConnected && latestSensorData) {
+      const newPoint: LiveDataPoint = {
+        timestamp: Date.now(),
+        nitrogen: latestSensorData.nitrogen,
+        phosphorus: latestSensorData.phosphorus,
+        potassium: latestSensorData.potassium,
+        pH: latestSensorData.pH,
+      };
+
+      setLiveData(prevData => {
+        // Check if data has changed from last point
+        const lastPoint = prevData[prevData.length - 1];
+        if (lastPoint && 
+            lastPoint.nitrogen === newPoint.nitrogen &&
+            lastPoint.phosphorus === newPoint.phosphorus &&
+            lastPoint.potassium === newPoint.potassium &&
+            lastPoint.pH === newPoint.pH) {
+          return prevData; // No change, don't add duplicate
         }
-      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.latest) {
-        setSoilData(data.latest);
-        if (isInitialLoad) {
-          setIsInitialLoad(false);
+        // Add new point and keep only last MAX_LIVE_DATA_POINTS
+        const updated = [...prevData, newPoint];
+        if (updated.length > MAX_LIVE_DATA_POINTS) {
+          return updated.slice(updated.length - MAX_LIVE_DATA_POINTS);
         }
-      } else if (data.message) {
-        setError(data.message);
-      }
-    } catch (err) {
-      console.error('Error fetching soil readings:', err);
-      if (!silent) {
-        setError('Failed to load soil readings');
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
+        return updated;
+      });
     }
-  };
+  }, [latestSensorData, isConnected]);
 
   const fetchPredictions = async (silent = false) => {
     // Stop trying if we've failed 10 times
@@ -176,11 +162,11 @@ export default function DashboardScreen() {
   };
 
   useEffect(() => {
-    fetchSoilReadings(false);
+    // Only fetch predictions, current readings come from Bluetooth
     fetchPredictions(false);
+    setLoading(false); // Set loading false immediately since we use Bluetooth data
     
     const interval = setInterval(() => {
-      fetchSoilReadings(true);
       fetchPredictions(true);
     }, 30000);
     
@@ -204,6 +190,29 @@ export default function DashboardScreen() {
     return `M ${points.join(' L ')}`;
   };
 
+  const generateLiveChartPath = (data: (number | null)[], width: number, height: number) => {
+    if (!data || data.length === 0) return '';
+    
+    const validData = data.filter(v => v !== null) as number[];
+    if (validData.length === 0) return '';
+    
+    const min = Math.min(...validData);
+    const max = Math.max(...validData);
+    const range = max - min || 1;
+    const xStep = width / (data.length - 1 || 1);
+    
+    const points: string[] = [];
+    data.forEach((value, index) => {
+      if (value !== null) {
+        const x = index * xStep;
+        const y = height - ((value - min) / range) * height;
+        points.push(`${x},${y}`);
+      }
+    });
+    
+    return points.length > 0 ? `M ${points.join(' L ')}` : '';
+  };
+
   const getNutrientConfig = (type: NutrientType) => {
     const configs = {
       nitrogen: { label: 'Nitrogen (N)', color: '#fb444a', icon: 'leaf' as const, unit: 'ppm' },
@@ -215,12 +224,14 @@ export default function DashboardScreen() {
   };
 
   const getCurrentValue = (type: NutrientType) => {
-    if (!soilData) return null;
+    // Use Bluetooth data only
+    if (!latestSensorData) return null;
+    
     const map = {
-      nitrogen: soilData.nitrogen,
-      phosphorus: soilData.phosphorus,
-      potassium: soilData.potassium,
-      ph: soilData.ph_level,
+      nitrogen: latestSensorData.nitrogen,
+      phosphorus: latestSensorData.phosphorus,
+      potassium: latestSensorData.potassium,
+      ph: latestSensorData.pH,
     };
     return map[type];
   };
@@ -283,18 +294,24 @@ export default function DashboardScreen() {
           <View style={styles.errorContainer}>
             <Ionicons name="alert-circle-outline" size={48} color="#fb444a" />
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => fetchSoilReadings(false)}>
+            <TouchableOpacity style={styles.retryButton} onPress={() => fetchPredictions(false)}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Current Readings */}
-        {soilData && !loading && (
+        {/* Current Readings - Only from Bluetooth */}
+        {isConnected && latestSensorData && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Current Readings</Text>
-              <TouchableOpacity onPress={() => { fetchSoilReadings(false); fetchPredictions(false); }}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>Current Readings</Text>
+                <View style={styles.liveIndicator}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => fetchPredictions(false)}>
                 <Ionicons name="refresh" size={20} color="#9e9c93" />
               </TouchableOpacity>
             </View>
@@ -304,38 +321,138 @@ export default function DashboardScreen() {
                 onPress={() => setSelectedNutrient('nitrogen')}
               >
                 <Text style={styles.cardLabel}>Nitrogen (N)</Text>
-                <Text style={styles.cardValue}>{soilData.nitrogen} ppm</Text>
+                <Text style={styles.cardValue}>
+                  {latestSensorData.nitrogen !== null ? `${latestSensorData.nitrogen} ppm` : '--'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.card, selectedNutrient === 'phosphorus' && styles.cardSelected]}
                 onPress={() => setSelectedNutrient('phosphorus')}
               >
                 <Text style={styles.cardLabel}>Phosphorus (P)</Text>
-                <Text style={styles.cardValue}>{soilData.phosphorus} ppm</Text>
+                <Text style={styles.cardValue}>
+                  {latestSensorData.phosphorus !== null ? `${latestSensorData.phosphorus} ppm` : '--'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.card, selectedNutrient === 'potassium' && styles.cardSelected]}
                 onPress={() => setSelectedNutrient('potassium')}
               >
                 <Text style={styles.cardLabel}>Potassium (K)</Text>
-                <Text style={styles.cardValue}>{soilData.potassium} ppm</Text>
+                <Text style={styles.cardValue}>
+                  {latestSensorData.potassium !== null ? `${latestSensorData.potassium} ppm` : '--'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.card, selectedNutrient === 'ph' && styles.cardSelected]}
                 onPress={() => setSelectedNutrient('ph')}
               >
                 <Text style={styles.cardLabel}>pH Level</Text>
-                <Text style={styles.cardValue}>{soilData.ph_level.toFixed(1)}</Text>
+                <Text style={styles.cardValue}>
+                  {latestSensorData.pH !== null ? latestSensorData.pH.toFixed(1) : '--'}
+                </Text>
               </TouchableOpacity>
             </View>
             <Text style={styles.timestamp}>
-              Last updated: {new Date(soilData.recorded_at).toLocaleString()}
+              ⚡ Real-time from Bluetooth
             </Text>
           </View>
         )}
 
+        {/* Live Graph */}
+        {isConnected && liveData.length > 1 && (
+          <View style={styles.section}>
+            <View style={styles.liveGraphContainer}>
+              <View style={styles.liveGraphHeader}>
+                <Ionicons name="analytics" size={24} color="#0bda95" />
+                <Text style={styles.liveGraphTitle}>Real-Time Trends</Text>
+                <Text style={styles.liveDataCount}>{liveData.length} points</Text>
+              </View>
+
+              {/* Main Chart */}
+              <View style={styles.chartContainer}>
+                <Svg height={160} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 160`}>
+                  {/* Grid lines */}
+                  <Path d={`M 0 40 L ${CHART_WIDTH} 40`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                  <Path d={`M 0 80 L ${CHART_WIDTH} 80`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                  <Path d={`M 0 120 L ${CHART_WIDTH} 120`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                  
+                  {/* Nitrogen Line */}
+                  <Path
+                    d={generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160)}
+                    stroke="#32cd32"
+                    strokeWidth="2.5"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  
+                  {/* Phosphorus Line */}
+                  <Path
+                    d={generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160)}
+                    stroke="#ff69b4"
+                    strokeWidth="2.5"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  
+                  {/* Potassium Line */}
+                  <Path
+                    d={generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160)}
+                    stroke="#9370db"
+                    strokeWidth="2.5"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                  
+                  {/* pH Line (scaled) */}
+                  <Path
+                    d={generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160)}
+                    stroke="#ff6347"
+                    strokeWidth="2.5"
+                    fill="none"
+                    strokeLinecap="round"
+                  />
+                </Svg>
+              </View>
+
+              {/* Legend */}
+              <View style={styles.legendContainer}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#32cd32' }]} />
+                  <Text style={styles.legendText}>N</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#ff69b4' }]} />
+                  <Text style={styles.legendText}>P</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#9370db' }]} />
+                  <Text style={styles.legendText}>K</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
+                  <Text style={styles.legendText}>pH (×10)</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* No Bluetooth Connection */}
+        {!isConnected && (
+          <View style={styles.section}>
+            <View style={styles.centerContent}>
+              <Ionicons name="bluetooth-outline" size={64} color="#9e9c93" />
+              <Text style={styles.unavailableTitle}>No Bluetooth Connection</Text>
+              <Text style={styles.unavailableText}>
+                Connect to your ESP32 device in the Devices tab to see real-time sensor readings.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Forecast Chart */}
-        {soilData && !loading && selectedPrediction && (
+        {isConnected && latestSensorData && selectedPrediction && (
           <View style={styles.section}>
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
@@ -425,7 +542,7 @@ export default function DashboardScreen() {
         )}
 
         {/* Predictions Not Available Message */}
-        {soilData && !loading && !selectedPrediction && (
+        {isConnected && latestSensorData && !selectedPrediction && (
           <View style={styles.section}>
             <View style={styles.chartCard}>
               <View style={styles.centerContent}>
@@ -448,7 +565,7 @@ export default function DashboardScreen() {
         )}
 
         {/* Key Metrics */}
-        {soilData && !loading && (
+        {isConnected && latestSensorData && (
           <View style={[styles.section, { paddingBottom: 24 }]}>
             <Text style={styles.sectionTitle}>Statistics</Text>
             {selectedPrediction && (
@@ -517,10 +634,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#e0daca',
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0bda95',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+  },
+  liveText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
   grid: {
     flexDirection: 'row',
@@ -735,5 +878,53 @@ const styles = StyleSheet.create({
     color: '#9e9c93',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  liveGraphContainer: {
+    backgroundColor: '#46474a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  liveGraphHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  liveGraphTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#e0daca',
+  },
+  liveDataCount: {
+    fontSize: 12,
+    color: '#9e9c93',
+    backgroundColor: '#3a3d42',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#3a3d42',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#e0daca',
+    fontWeight: '500',
   },
 });
