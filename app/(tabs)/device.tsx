@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Buffer } from 'buffer';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Linking, PermissionsAndroid, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { BleManager, Device } from 'react-native-ble-plx';
+import * as IntentLauncher from 'expo-intent-launcher';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, PermissionsAndroid, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import RNBluetoothClassic, { BluetoothDevice } from 'react-native-bluetooth-classic';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface ScannedDevice {
@@ -11,38 +11,55 @@ interface ScannedDevice {
   rssi: number | null;
 }
 
+interface SensorData {
+  latitude: number | null;
+  longitude: number | null;
+  satelliteCount: number | null;
+  bearing: number | null;
+  nitrogen: number | null;
+  phosphorus: number | null;
+  potassium: number | null;
+  pH: number | null;
+  moisture: number | null;
+}
+
 export default function DeviceScreen() {
-  const [bleManager] = useState(() => new BleManager());
-  const [scanning, setScanning] = useState(false);
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
-  const [connectedDevice, setConnectedDevice] = useState<Device | null>(null);
+  const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [serialData, setSerialData] = useState<string>('');
+  const [sensorData, setSensorData] = useState<SensorData>({
+    latitude: null,
+    longitude: null,
+    satelliteCount: null,
+    bearing: null,
+    nitrogen: null,
+    phosphorus: null,
+    potassium: null,
+    pH: null,
+    moisture: null,
+  });
   const [isReading, setIsReading] = useState(false);
   const [bluetoothState, setBluetoothState] = useState<string>('Unknown');
   const [isSerialExpanded, setIsSerialExpanded] = useState(true);
+  const [isScanning, setIsScanning] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     checkBluetoothPermissions();
     checkBluetoothState();
     
-    // Monitor Bluetooth state changes
-    const subscription = bleManager.onStateChange((state) => {
-      setBluetoothState(state);
-    }, true);
-    
     return () => {
-      bleManager.stopDeviceScan();
-      subscription.remove();
+      stopScanning();
     };
-  }, []);
-
-  const checkBluetoothState = async () => {
+  }, []);  const checkBluetoothState = async () => {
     try {
-      const state = await bleManager.state();
-      setBluetoothState(state);
+      const isEnabled = await RNBluetoothClassic.isBluetoothEnabled();
+      setBluetoothState(isEnabled ? 'PoweredOn' : 'PoweredOff');
+      console.log('Classic Bluetooth enabled:', isEnabled);
     } catch (error) {
       console.error('Error checking Bluetooth state:', error);
+      setBluetoothState('Unknown');
     }
   };
 
@@ -50,25 +67,53 @@ export default function DeviceScreen() {
     if (Platform.OS === 'android') {
       try {
         const apiLevel = Platform.Version;
+        console.log('Android API Level:', apiLevel);
         
         if (apiLevel >= 31) {
-          // Android 12+
+          // Android 12+ (API 31+)
+          console.log('Requesting Android 12+ permissions...');
           const granted = await PermissionsAndroid.requestMultiple([
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
             PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
           ]);
           
+          console.log('Permission results:', granted);
+          
           const allGranted = Object.values(granted).every(
             status => status === PermissionsAndroid.RESULTS.GRANTED
           );
+          
+          if (!allGranted) {
+            Alert.alert(
+              'Permissions Required',
+              'Bluetooth and Location permissions are required for device discovery. Please grant all permissions.',
+              [{ text: 'OK' }]
+            );
+          }
+          
           setHasPermissions(allGranted);
-        } else {
-          // Android 11 and below
+        } else if (apiLevel >= 23) {
+          // Android 6-11 (API 23-30)
+          console.log('Requesting Android 6-11 permissions...');
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
           );
-          setHasPermissions(granted === PermissionsAndroid.RESULTS.GRANTED);
+          
+          const hasPermission = granted === PermissionsAndroid.RESULTS.GRANTED;
+          
+          if (!hasPermission) {
+            Alert.alert(
+              'Permission Required',
+              'Location permission is required for Bluetooth device discovery.',
+              [{ text: 'OK' }]
+            );
+          }
+          
+          setHasPermissions(hasPermission);
+        } else {
+          // Android 5 and below - no runtime permissions needed
+          setHasPermissions(true);
         }
       } catch (err) {
         console.error('Permission error:', err);
@@ -82,200 +127,250 @@ export default function DeviceScreen() {
 
   const toggleBluetooth = async () => {
     if (Platform.OS === 'android') {
-      Alert.alert(
-        'Enable Bluetooth',
-        'Please enable Bluetooth in your device settings to scan for devices.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Open Settings', 
-            onPress: async () => {
-              try {
-                // Try to open Bluetooth settings directly
-                await Linking.openSettings();
-              } catch (error) {
-                console.error('Error opening settings:', error);
-                Alert.alert('Error', 'Could not open settings. Please enable Bluetooth manually.');
-              }
-            }
-          }
-        ]
-      );
+      try {
+        // Open Bluetooth settings directly using IntentLauncher
+        await IntentLauncher.startActivityAsync(
+          IntentLauncher.ActivityAction.BLUETOOTH_SETTINGS
+        );
+      } catch (error) {
+        console.error('Error opening Bluetooth settings:', error);
+        Alert.alert(
+          'Error',
+          'Could not open Bluetooth settings. Please enable Bluetooth manually in Settings.',
+          [{ text: 'OK' }]
+        );
+      }
     } else {
-      // iOS automatically prompts for Bluetooth when needed
+      // iOS - cannot programmatically open Bluetooth settings
       Alert.alert(
         'Enable Bluetooth',
-        'Please enable Bluetooth in Control Center or Settings',
-        [
-          { text: 'OK' }
-        ]
+        'Please enable Bluetooth in Control Center or Settings > Bluetooth',
+        [{ text: 'OK' }]
       );
     }
   };
 
-  const startScan = async () => {
+  const startScanning = async () => {
+    if (isScanning) return;
+    
+    // Check permissions first
     if (!hasPermissions) {
       Alert.alert(
         'Permissions Required',
-        'Please enable Bluetooth and Location permissions to scan for devices.',
-        [{ text: 'OK', onPress: checkBluetoothPermissions }]
+        'Please grant Bluetooth and Location permissions to scan for devices.',
+        [
+          { text: 'Grant Permissions', onPress: checkBluetoothPermissions },
+          { text: 'Cancel', style: 'cancel' }
+        ]
       );
       return;
     }
-
-    // Check if Bluetooth is enabled
-    const bluetoothState = await bleManager.state();
-    if (bluetoothState !== 'PoweredOn') {
-      Alert.alert(
-        'Bluetooth is Off',
-        'Please turn on Bluetooth in your device settings to scan for devices.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    setScanning(true);
-    setDevices([]);
     
-    const discoveredDevices = new Map<string, ScannedDevice>();
+    setIsScanning(true);
+    setDevices([]);
 
-    bleManager.startDeviceScan(null, null, (error, device) => {
-      if (error) {
-        console.error('Scan error:', error);
-        setScanning(false);
-        
-        // Show user-friendly error message
-        if (error.message.includes('powered off') || error.message.includes('PoweredOff')) {
-          Alert.alert(
-            'Bluetooth is Off',
-            'Please turn on Bluetooth in your device settings.',
-            [{ text: 'OK' }]
-          );
-        } else if (error.message.includes('unauthorized') || error.message.includes('permission')) {
-          Alert.alert(
-            'Permission Denied',
-            'Bluetooth permissions are required. Please enable them in settings.',
-            [{ text: 'OK', onPress: checkBluetoothPermissions }]
-          );
-        } else {
-          Alert.alert(
-            'Scan Error',
-            `Unable to scan: ${error.message}`,
-            [{ text: 'OK' }]
-          );
-        }
+    console.log('Starting Classic Bluetooth discovery for nearby devices...');
+
+    try {
+      const isEnabled = await RNBluetoothClassic.isBluetoothEnabled();
+      console.log('Bluetooth enabled:', isEnabled);
+      
+      if (!isEnabled) {
+        Alert.alert('Bluetooth Off', 'Please turn on Bluetooth to scan for devices.');
+        setIsScanning(false);
         return;
       }
 
-      if (device && device.id) {
-        // Filter for ESP32 devices (look for common ESP32 names)
-        const deviceName = device.name || 'Unknown Device';
-        const isESP32 = deviceName.toLowerCase().includes('esp32') || 
-                        deviceName.toLowerCase().includes('esp') ||
-                        deviceName.toLowerCase().includes('soil') ||
-                        deviceName.toLowerCase().includes('verdex');
-
-        if (isESP32 || !device.name) {
-          discoveredDevices.set(device.id, {
-            id: device.id,
-            name: device.name,
-            rssi: device.rssi,
-          });
+      // Start discovery for nearby Classic Bluetooth devices
+      console.log('Starting device discovery...');
+      const discoveredDevices = await RNBluetoothClassic.startDiscovery();
+      
+      console.log('Discovery started! Initial devices found:', discoveredDevices ? discoveredDevices.length : 0);
+      
+      // If startDiscovery returns initial devices, add them to the list
+      if (discoveredDevices && Array.isArray(discoveredDevices) && discoveredDevices.length > 0) {
+        const initialDevices = discoveredDevices.map(device => {
+          const rssiValue = device.extra && typeof device.extra === 'object' && 'rssi' in device.extra 
+            ? Number((device.extra as any).rssi) 
+            : null;
           
-          setDevices(Array.from(discoveredDevices.values()));
-        }
+          return {
+            id: device.address,
+            name: device.name || device.address,
+            rssi: rssiValue,
+          };
+        });
+        
+        setDevices(sortDevices(initialDevices));
+        
+        // Log each device
+        discoveredDevices.forEach(device => {
+          const rssiValue = device.extra && typeof device.extra === 'object' && 'rssi' in device.extra 
+            ? (device.extra as any).rssi 
+            : 'N/A';
+          console.log('🔵 Initial device:', device.name || device.address, device.address, 'RSSI:', rssiValue);
+        });
       }
-    });
+      
+      // Continue listening for new devices discovered during the scan
+      const subscription = RNBluetoothClassic.onDeviceDiscovered((event) => {
+        const device = event.device;
+        const rssiValue = device.extra && typeof device.extra === 'object' && 'rssi' in device.extra 
+          ? (device.extra as any).rssi 
+          : 'N/A';
+        console.log('🔵 Newly discovered device:', device.name, device.address, 'RSSI:', rssiValue);
+        
+        setDevices(prevDevices => {
+          // Check if device already exists
+          const existingIndex = prevDevices.findIndex(d => d.id === device.address);
+          
+          if (existingIndex >= 0) {
+            // Update RSSI if changed
+            const updated = [...prevDevices];
+            const newRssi = device.extra && typeof device.extra === 'object' && 'rssi' in device.extra 
+              ? Number((device.extra as any).rssi) 
+              : null;
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              rssi: newRssi,
+            };
+            return sortDevices(updated);
+          } else {
+            // Add new device
+            const newRssi = device.extra && typeof device.extra === 'object' && 'rssi' in device.extra 
+              ? Number((device.extra as any).rssi) 
+              : null;
+            const newDevices = [...prevDevices, {
+              id: device.address,
+              name: device.name || device.address,
+              rssi: newRssi,
+            }];
+            return sortDevices(newDevices);
+          }
+        });
+      });
 
-    // Stop scanning after 10 seconds
-    setTimeout(() => {
-      bleManager.stopDeviceScan();
-      setScanning(false);
-    }, 10000);
+      // Auto-stop discovery after 12 seconds
+      setTimeout(async () => {
+        await stopScanning();
+      }, 12000);
+      
+    } catch (error) {
+      console.error('Bluetooth scan error:', error);
+      Alert.alert('Error', 'Failed to scan for Bluetooth devices: ' + error);
+      setIsScanning(false);
+    }
   };
 
-  const stopScan = () => {
-    bleManager.stopDeviceScan();
-    setScanning(false);
+  const sortDevices = (devices: ScannedDevice[]) => {
+    // Sort: ESP devices first, then by signal strength
+    return devices.sort((a, b) => {
+      const aIsESP = a.name?.toUpperCase().includes('ESP') || false;
+      const bIsESP = b.name?.toUpperCase().includes('ESP') || false;
+      
+      if (aIsESP && !bIsESP) return -1;
+      if (!aIsESP && bIsESP) return 1;
+      
+      // Then by RSSI (signal strength) - higher is better
+      const aRssi = a.rssi || -999;
+      const bRssi = b.rssi || -999;
+      return bRssi - aRssi;
+    });
+  };
+
+  const stopScanning = async () => {
+    console.log('Stopping device scan...');
+    
+    try {
+      await RNBluetoothClassic.cancelDiscovery();
+      console.log('Stopped Classic Bluetooth discovery');
+    } catch (error) {
+      console.error('Error stopping discovery:', error);
+    }
+    
+    setIsScanning(false);
   };
 
   const connectToDevice = async (deviceId: string) => {
     try {
-      bleManager.stopDeviceScan();
-      setScanning(false);
+      // Stop scanning before connecting
+      await stopScanning();
       
-      const device = await bleManager.connectToDevice(deviceId);
-      await device.discoverAllServicesAndCharacteristics();
+      console.log('Connecting to Classic Bluetooth device:', deviceId);
+      const device = await RNBluetoothClassic.connectToDevice(deviceId);
       
       setConnectedDevice(device);
       setSerialData('');
+      setIsSerialExpanded(true);
       
-      // Start reading serial data
-      startReadingSerialData(device);
+      // Start reading Classic Bluetooth serial data
+      startReadingClassicSerial(device);
       
-      Alert.alert('Success', `Connected to ${device.name || 'device'}`);
+      Alert.alert('Success', `Connected to ${device.name || 'device'}. Serial monitor will show data.`);
     } catch (error) {
       console.error('Connection error:', error);
-      Alert.alert('Error', 'Failed to connect to device');
+      Alert.alert('Error', 'Failed to connect to device: ' + error);
     }
   };
 
-  const startReadingSerialData = async (device: Device) => {
+  const startReadingClassicSerial = async (device: BluetoothDevice) => {
     try {
       setIsReading(true);
+      console.log('Starting Classic Bluetooth serial reading...');
       
-      // Get all services and characteristics
-      const services = await device.services();
-      
-      for (const service of services) {
-        const characteristics = await service.characteristics();
-        
-        for (const characteristic of characteristics) {
-          // Check if characteristic supports notifications or reading
-          if (characteristic.isNotifiable) {
-            // Subscribe to notifications for serial data
-            characteristic.monitor((error, char) => {
-              if (error) {
-                console.error('Monitor error:', error);
-                return;
-              }
-              
-              if (char?.value) {
-                try {
-                  // Decode base64 value to string
-                  const decodedValue = Buffer.from(char.value, 'base64').toString('utf-8');
-                  setSerialData(prev => prev + decodedValue);
-                } catch (decodeError) {
-                  console.error('Decode error:', decodeError);
-                }
-              }
+      // Subscribe to data events from Classic Bluetooth
+      const subscription = device.onDataReceived((data) => {
+        try {
+          // Data comes as string from Classic Bluetooth
+          // Format: "latitude, longitude, satelliteCount, bearing, N: nitrogen, P: phosphorus, K: potassium, pH: pH, M: moisture"
+          // Example: "18.4, 80.9, 6, 4, N: 23, P: 12, K: 25, pH: 7.5, M: 85"
+          const receivedData = data.data;
+          console.log('Received Classic data:', receivedData);
+          
+          // Parse the sensor data
+          const values = receivedData.split(',').map((v: string) => v.trim());
+          
+          if (values.length >= 4) {
+            const parsedData: SensorData = {
+              latitude: parseFloat(values[0]) || null,
+              longitude: parseFloat(values[1]) || null,
+              satelliteCount: parseInt(values[2]) || null,
+              bearing: parseFloat(values[3]) || null,
+              nitrogen: null,
+              phosphorus: null,
+              potassium: null,
+              pH: null,
+              moisture: null,
+            };
+            
+            // Parse the labeled values (N:, P:, K:, pH:, M:)
+            values.slice(4).forEach((item: string) => {
+              if (item.includes('N:')) parsedData.nitrogen = parseFloat(item.split(':')[1]) || null;
+              else if (item.includes('P:')) parsedData.phosphorus = parseFloat(item.split(':')[1]) || null;
+              else if (item.includes('K:')) parsedData.potassium = parseFloat(item.split(':')[1]) || null;
+              else if (item.includes('pH:')) parsedData.pH = parseFloat(item.split(':')[1]) || null;
+              else if (item.includes('M:')) parsedData.moisture = parseFloat(item.split(':')[1]) || null;
             });
-          } else if (characteristic.isReadable) {
-            // Try to read the characteristic
-            try {
-              const readChar = await characteristic.read();
-              if (readChar.value) {
-                const decodedValue = Buffer.from(readChar.value, 'base64').toString('utf-8');
-                setSerialData(prev => prev + decodedValue + '\n');
-              }
-            } catch (readError) {
-              // Silent fail for unreadable characteristics
-            }
+            
+            setSensorData(parsedData);
           }
+        } catch (error) {
+          console.error('Error processing Classic data:', error);
         }
-      }
+      });
       
-      setIsReading(false);
+      console.log('Classic Bluetooth serial monitor active');
     } catch (error) {
-      console.error('Reading error:', error);
+      console.error('Classic Bluetooth reading error:', error);
       setIsReading(false);
+      Alert.alert('Error', 'Failed to read serial data from device');
     }
   };
 
   const disconnectDevice = async () => {
     if (connectedDevice) {
       try {
-        await bleManager.cancelDeviceConnection(connectedDevice.id);
+        await connectedDevice.disconnect();
         setConnectedDevice(null);
         setSerialData('');
         setIsReading(false);
@@ -290,24 +385,40 @@ export default function DeviceScreen() {
     setSerialData('');
   };
 
-  const renderDevice = ({ item }: { item: ScannedDevice }) => (
-    <TouchableOpacity 
-      style={styles.deviceCard}
-      onPress={() => connectToDevice(item.id)}
-    >
-      <View style={styles.deviceIcon}>
-        <Ionicons name="bluetooth" size={28} color="#fb444a" />
-      </View>
-      <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
-        <Text style={styles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
-        {item.rssi && (
-          <Text style={styles.deviceRssi}>Signal: {item.rssi} dBm</Text>
-        )}
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
-    </TouchableOpacity>
-  );
+  const renderDevice = ({ item }: { item: ScannedDevice }) => {
+    const isESP = item.name?.toUpperCase().includes('ESP') || false;
+    
+    return (
+      <TouchableOpacity 
+        style={[styles.deviceCard, isESP && styles.deviceCardESP]}
+        onPress={() => connectToDevice(item.id)}
+      >
+        <View style={styles.deviceIcon}>
+          <Ionicons 
+            name="bluetooth" 
+            size={28} 
+            color={isESP ? "#0bda95" : "#fb444a"} 
+          />
+        </View>
+        <View style={styles.deviceInfo}>
+          <View style={styles.deviceNameRow}>
+            <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
+            {isESP && (
+              <View style={styles.espBadge}>
+                <Ionicons name="flash" size={12} color="#0bda95" />
+                <Text style={styles.espBadgeText}>ESP</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
+          {item.rssi && (
+            <Text style={styles.deviceRssi}>Signal: {item.rssi} dBm</Text>
+          )}
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -317,7 +428,7 @@ export default function DeviceScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Connected Device */}
         {connectedDevice && (
           <View style={styles.connectedSection}>
@@ -331,162 +442,195 @@ export default function DeviceScreen() {
                 <Text style={styles.disconnectButtonText}>Disconnect</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        )}
 
-            {/* Serial Monitor - Collapsible Terminal View */}
-            <View style={styles.serialSection}>
-              <TouchableOpacity 
-                style={styles.serialHeader}
-                onPress={() => setIsSerialExpanded(!isSerialExpanded)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.serialTitleRow}>
-                  <Ionicons name="terminal" size={20} color="#0bda95" />
-                  <Text style={styles.sectionTitle}>Serial Monitor</Text>
-                  {isReading && (
-                    <View style={styles.liveIndicator}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.liveText}>LIVE</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.serialControls}>
-                  <TouchableOpacity onPress={(e) => {
-                    e.stopPropagation();
-                    clearSerialData();
-                  }} style={styles.clearButton}>
-                    <Ionicons name="trash-outline" size={16} color="#9e9c93" />
-                  </TouchableOpacity>
-                  <Ionicons 
-                    name={isSerialExpanded ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color="#9e9c93" 
-                  />
-                </View>
-              </TouchableOpacity>
+        {/* Scan Controls - Only show when NOT connected */}
+        {!connectedDevice && (
+          <>
+            <View style={styles.scanSection}>
+              <Text style={styles.sectionTitle}>Scan for ESP32 Devices</Text>
               
-              {isSerialExpanded && (
-                <View style={styles.terminalContainer}>
-                  <View style={styles.terminalHeader}>
-                    <View style={styles.terminalButtons}>
-                      <View style={[styles.terminalButton, { backgroundColor: '#fb444a' }]} />
-                      <View style={[styles.terminalButton, { backgroundColor: '#ffa500' }]} />
-                      <View style={[styles.terminalButton, { backgroundColor: '#0bda95' }]} />
-                    </View>
-                    <Text style={styles.terminalTitle}>
-                      {connectedDevice?.name || 'ESP32'} - COM Monitor
-                    </Text>
+              {/* Bluetooth State Indicator with Toggle */}
+              <View style={styles.stateIndicator}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                  <View style={[
+                    styles.stateIcon,
+                    bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
+                  ]}>
+                    <Ionicons 
+                      name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
+                      size={16} 
+                      color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
+                    />
                   </View>
-                  <ScrollView 
-                    style={styles.serialOutput} 
-                    nestedScrollEnabled
-                    ref={(ref) => ref?.scrollToEnd({ animated: true })}
-                  >
-                    {serialData ? (
-                      <Text style={styles.serialText}>{serialData}</Text>
-                    ) : (
-                      <Text style={styles.serialPlaceholder}>
-                        {isReading ? '⏳ Waiting for data...' : '💤 No data received yet'}
-                      </Text>
-                    )}
-                  </ScrollView>
-                  <View style={styles.terminalFooter}>
-                    <Text style={styles.terminalFooterText}>
-                      {serialData.length} bytes received
-                    </Text>
-                    <View style={styles.terminalBaudRate}>
-                      <Ionicons name="speedometer-outline" size={12} color="#9e9c93" />
-                      <Text style={styles.terminalFooterText}>115200 baud</Text>
-                    </View>
-                  </View>
+                  <Text style={styles.stateText}>
+                    Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
+                  </Text>
                 </View>
+                {bluetoothState === 'PoweredOff' && (
+                  <TouchableOpacity 
+                    style={styles.toggleBluetoothButton} 
+                    onPress={toggleBluetooth}
+                  >
+                    <Ionicons name="settings-outline" size={16} color="#fb444a" />
+                    <Text style={styles.toggleBluetoothText}>Enable</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {/* ESP Devices Section */}
+              <View style={styles.pairedDevicesHeader}>
+                <View style={styles.scanningIndicator}>
+                  {isScanning && <ActivityIndicator size="small" color="#0bda95" />}
+                  <Text style={styles.sectionTitle}>Bluetooth Devices</Text>
+                </View>
+                <TouchableOpacity 
+                  style={[
+                    styles.refreshButton,
+                    isScanning && styles.refreshButtonActive
+                  ]}
+                  onPress={isScanning ? stopScanning : startScanning}
+                  disabled={bluetoothState !== 'PoweredOn' || !hasPermissions}
+                >
+                  <Ionicons 
+                    name={isScanning ? "stop-circle" : "play-circle"} 
+                    size={20} 
+                    color="#fff" 
+                  />
+                  <Text style={styles.refreshButtonText}>
+                    {isScanning ? 'Stop' : 'Scan'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              
+              {!hasPermissions && (
+                <Text style={styles.permissionWarning}>
+                  ⚠️ Bluetooth permissions not granted
+                </Text>
               )}
             </View>
-          </View>
-        )}
 
-        {/* Scan Controls */}
-        <View style={styles.scanSection}>
-          <Text style={styles.sectionTitle}>Scan for ESP32 Devices</Text>
-          
-          {/* Bluetooth State Indicator with Toggle */}
-          <View style={styles.stateIndicator}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <View style={[
-                styles.stateIcon,
-                bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
-              ]}>
-                <Ionicons 
-                  name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
-                  size={16} 
-                  color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
+            {/* Device List */}
+            {devices.length > 0 ? (
+              <View style={styles.listSection}>
+                <View style={styles.deviceListHeader}>
+                  <Text style={styles.sectionTitle}>Available Devices ({devices.length})</Text>
+                </View>
+                <FlatList
+                  data={devices}
+                  renderItem={renderDevice}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
                 />
               </View>
-              <Text style={styles.stateText}>
-                Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
-              </Text>
-            </View>
-            {bluetoothState === 'PoweredOff' && (
-              <TouchableOpacity 
-                style={styles.toggleBluetoothButton} 
-                onPress={toggleBluetooth}
-              >
-                <Ionicons name="settings-outline" size={16} color="#fb444a" />
-                <Text style={styles.toggleBluetoothText}>Enable</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          <TouchableOpacity 
-            style={[
-              styles.scanButton, 
-              scanning && styles.scanButtonActive,
-              bluetoothState !== 'PoweredOn' && !scanning && styles.scanButtonDisabled
-            ]}
-            onPress={scanning ? stopScan : startScan}
-            disabled={(bluetoothState !== 'PoweredOn' || !hasPermissions) && !scanning}
-          >
-            {scanning ? (
-              <>
-                <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.scanButtonText}>Stop Scanning</Text>
-              </>
             ) : (
-              <>
-                <Ionicons name="search" size={20} color="#fff" />
-                <Text style={styles.scanButtonText}>Start Scan</Text>
-              </>
+              <View style={styles.emptyState}>
+                <Ionicons name="radio-outline" size={64} color="#9e9c93" />
+                <Text style={styles.emptyText}>
+                  {isScanning ? 'Searching for devices...' : 'No devices found'}
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {isScanning 
+                    ? 'Make sure your ESP device is powered on'
+                    : 'Tap "Scan" to search for nearby Bluetooth devices'}
+                </Text>
+              </View>
             )}
-          </TouchableOpacity>
-          
-          {!hasPermissions && (
-            <Text style={styles.permissionWarning}>
-              ⚠️ Bluetooth permissions not granted
-            </Text>
-          )}
-        </View>
+          </>
+        )}
 
-        {/* Device List */}
-        {devices.length > 0 ? (
-          <View style={styles.listSection}>
-            <Text style={styles.sectionTitle}>Found Devices ({devices.length})</Text>
-            <FlatList
-              data={devices}
-              renderItem={renderDevice}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-            />
-          </View>
-        ) : !scanning && (
-          <View style={styles.emptyState}>
-            <Ionicons name="radio-outline" size={64} color="#9e9c93" />
-            <Text style={styles.emptyText}>No devices found</Text>
-            <Text style={styles.emptySubtext}>
-              Tap "Start Scan" to search for nearby ESP32 devices
-            </Text>
+        {/* Live Sensor Data - Only show when connected */}
+        {connectedDevice && (
+          <View style={styles.sensorDataSection}>
+
+            {/* Sensor Cards Grid */}
+            <View style={styles.sensorGrid}>
+              {/* Latitude */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="navigate" size={24} color="#fb444a" />
+                <Text style={styles.sensorLabel}>Latitude</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.latitude !== null ? `${sensorData.latitude}°` : '--'}
+                </Text>
+              </View>
+
+              {/* Longitude */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="navigate-outline" size={24} color="#4a9eff" />
+                <Text style={styles.sensorLabel}>Longitude</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.longitude !== null ? `${sensorData.longitude}°` : '--'}
+                </Text>
+              </View>
+
+              {/* Satellite Count */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="globe" size={24} color="#0bda95" />
+                <Text style={styles.sensorLabel}>Satellites</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.satelliteCount !== null ? `${sensorData.satelliteCount}` : '--'}
+                </Text>
+              </View>
+
+              {/* Bearing */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="compass" size={24} color="#ffa500" />
+                <Text style={styles.sensorLabel}>Bearing</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.bearing !== null ? `${sensorData.bearing}°` : '--'}
+                </Text>
+              </View>
+
+              {/* Nitrogen */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="leaf" size={24} color="#32cd32" />
+                <Text style={styles.sensorLabel}>Nitrogen (N)</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.nitrogen !== null ? `${sensorData.nitrogen}` : '--'}
+                </Text>
+              </View>
+
+              {/* Phosphorus */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="leaf-outline" size={24} color="#ff69b4" />
+                <Text style={styles.sensorLabel}>Phosphorus (P)</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.phosphorus !== null ? `${sensorData.phosphorus}` : '--'}
+                </Text>
+              </View>
+
+              {/* Potassium */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="fitness" size={24} color="#9370db" />
+                <Text style={styles.sensorLabel}>Potassium (K)</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.potassium !== null ? `${sensorData.potassium}` : '--'}
+                </Text>
+              </View>
+
+              {/* pH */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="flask" size={24} color="#ff6347" />
+                <Text style={styles.sensorLabel}>pH Level</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.pH !== null ? `${sensorData.pH}` : '--'}
+                </Text>
+              </View>
+
+              {/* Moisture */}
+              <View style={styles.sensorCard}>
+                <Ionicons name="water" size={24} color="#4a9eff" />
+                <Text style={styles.sensorLabel}>Moisture</Text>
+                <Text style={styles.sensorValue}>
+                  {sensorData.moisture !== null ? `${sensorData.moisture}%` : '--'}
+                </Text>
+              </View>
+            </View>
           </View>
         )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -514,7 +658,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   connectedSection: {
     marginBottom: 24,
@@ -557,24 +703,36 @@ const styles = StyleSheet.create({
   scanSection: {
     marginBottom: 24,
   },
-  scanButton: {
-    backgroundColor: '#fb444a',
-    paddingVertical: 14,
+  pairedDevicesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  scanningIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refreshButton: {
+    backgroundColor: '#0bda95',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
   },
-  scanButtonActive: {
-    backgroundColor: '#9e9c93',
+  refreshButtonActive: {
+    backgroundColor: '#fb444a',
   },
-  scanButtonDisabled: {
+  refreshButtonDisabled: {
     backgroundColor: '#46474a',
     opacity: 0.5,
   },
-  scanButtonText: {
-    fontSize: 16,
+  refreshButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },
@@ -625,6 +783,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  deviceCardESP: {
+    backgroundColor: '#3a4a3e',
+    borderLeftWidth: 3,
+    borderLeftColor: '#0bda95',
+  },
+  espBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(11, 218, 149, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 2,
+  },
+  espBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#0bda95',
   },
   deviceIcon: {
     width: 48,
@@ -778,6 +955,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 40,
   },
+  serialHint: {
+    fontSize: 10,
+    color: '#9e9c93',
+    textAlign: 'center',
+    marginTop: 8,
+    paddingHorizontal: 20,
+    lineHeight: 14,
+  },
   terminalFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -813,5 +998,130 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#fb444a',
     fontWeight: '600',
+  },
+  deviceListHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  deviceListActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fb444a',
+    borderRadius: 6,
+  },
+  verifyButtonText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#46474a',
+    borderRadius: 6,
+  },
+  filterButtonText: {
+    fontSize: 12,
+    color: '#9e9c93',
+    fontWeight: '500',
+  },
+  filterButtonTextActive: {
+    color: '#0bda95',
+  },
+  deviceCardVerified: {
+    borderWidth: 2,
+    borderColor: '#0bda95',
+    backgroundColor: 'rgba(11, 218, 149, 0.05)',
+  },
+  deviceNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(11, 218, 149, 0.2)',
+    borderRadius: 4,
+  },
+  verifiedText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#0bda95',
+  },
+  unverifiedBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  verifyingText: {
+    fontSize: 11,
+    color: '#fb444a',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  sensorDataSection: {
+    flex: 1,
+  },
+  sensorDataHeader: {
+    backgroundColor: '#46474a',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  liveIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  sensorDataTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#e0daca',
+  },
+  deviceNameText: {
+    fontSize: 14,
+    color: '#9e9c93',
+  },
+  sensorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  sensorCard: {
+    width: '48%',
+    backgroundColor: '#46474a',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  sensorLabel: {
+    fontSize: 12,
+    color: '#9e9c93',
+    textAlign: 'center',
+  },
+  sensorValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#e0daca',
   },
 });
