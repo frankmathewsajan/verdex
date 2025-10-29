@@ -62,6 +62,8 @@ export default function DashboardScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [selectedNutrient, setSelectedNutrient] = useState<NutrientType>('nitrogen');
+  const [predictionFailCount, setPredictionFailCount] = useState(0);
+  const [predictionDisabled, setPredictionDisabled] = useState(false);
 
   const fetchSoilReadings = async (silent = false) => {
     try {
@@ -111,6 +113,11 @@ export default function DashboardScreen() {
   };
 
   const fetchPredictions = async (silent = false) => {
+    // Stop trying if we've failed 10 times
+    if (predictionDisabled) {
+      return;
+    }
+
     try {
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
       const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_KEY;
@@ -126,8 +133,16 @@ export default function DashboardScreen() {
       );
 
       if (!response.ok) {
-        // Silently fail if prediction API is down, don't crash the app
-        console.warn(`Prediction API returned ${response.status}, continuing without predictions`);
+        // Increment fail count
+        const newFailCount = predictionFailCount + 1;
+        setPredictionFailCount(newFailCount);
+        
+        if (newFailCount >= 10) {
+          setPredictionDisabled(true);
+          console.warn('Prediction API failed 10 times, stopped automatic retries');
+        } else {
+          console.warn(`Prediction API returned ${response.status}, continuing without predictions (${newFailCount}/10)`);
+        }
         return;
       }
 
@@ -136,11 +151,28 @@ export default function DashboardScreen() {
       // Validate response structure
       if (data?.cleaned?.predictions) {
         setPredictionData(data);
+        // Reset fail count on success
+        setPredictionFailCount(0);
       }
     } catch (err) {
-      // Silently fail - predictions are optional, don't disrupt main readings
-      console.error('Error fetching predictions:', err);
+      // Increment fail count on error
+      const newFailCount = predictionFailCount + 1;
+      setPredictionFailCount(newFailCount);
+      
+      if (newFailCount >= 10) {
+        setPredictionDisabled(true);
+        console.warn('Prediction API failed 10 times, stopped automatic retries');
+      } else {
+        console.error(`Error fetching predictions (${newFailCount}/10):`, err);
+      }
     }
+  };
+
+  const manualRetryPredictions = async () => {
+    // Reset counters and try again
+    setPredictionFailCount(0);
+    setPredictionDisabled(false);
+    await fetchPredictions(false);
   };
 
   useEffect(() => {
@@ -400,8 +432,16 @@ export default function DashboardScreen() {
                 <Ionicons name="cloud-offline-outline" size={48} color="#9e9c93" />
                 <Text style={styles.unavailableTitle}>Predictions Unavailable</Text>
                 <Text style={styles.unavailableText}>
-                  The forecast service is currently offline. Current readings are still available above.
+                  {predictionDisabled 
+                    ? 'The forecast service failed after multiple attempts. Tap below to retry manually.'
+                    : 'The forecast service is currently offline. Current readings are still available above.'}
                 </Text>
+                {predictionDisabled && (
+                  <TouchableOpacity style={styles.retryButton} onPress={manualRetryPredictions}>
+                    <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.retryButtonText}>Retry Predictions</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -664,6 +704,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   retryButtonText: {
     fontSize: 16,
