@@ -61,6 +61,7 @@ export default function DeviceScreen() {
   const [bluetoothState, setBluetoothState] = useState<string>('Unknown');
   const [isSerialExpanded, setIsSerialExpanded] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
+  const [batchCompleted, setBatchCompleted] = useState(false); // Track if batch was sent
   const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -255,6 +256,12 @@ export default function DeviceScreen() {
           : 'N/A';
         console.log('🔵 Newly discovered device:', device.name, device.address, 'RSSI:', rssiValue);
         
+        // Check if this is a target device - if so, we can stop scanning sooner
+        const isTarget = isTargetDevice(device.name);
+        if (isTarget) {
+          console.log('🎯 Target device found! Stopping scan early.');
+        }
+        
         setDevices(prevDevices => {
           // Check if device already exists
           const existingIndex = prevDevices.findIndex(d => d.id === device.address);
@@ -283,12 +290,19 @@ export default function DeviceScreen() {
             return sortDevices(newDevices);
           }
         });
+        
+        // Stop early if we found a target device
+        if (isTarget) {
+          setTimeout(async () => {
+            await stopScanning();
+          }, 1000); // Give 1 more second to find other nearby target devices
+        }
       });
 
-      // Auto-stop discovery after 12 seconds
+      // Auto-stop discovery after 5 seconds (reduced from 12)
       setTimeout(async () => {
         await stopScanning();
-      }, 12000);
+      }, 5000);
       
     } catch (error) {
       console.error('Bluetooth scan error:', error);
@@ -347,6 +361,7 @@ export default function DeviceScreen() {
       
       setSerialData('');
       setIsSerialExpanded(true);
+      setBatchCompleted(false); // Reset batch completion flag on new connection
       
       // Start local UI updates for serial display
       startLocalSerialDisplay(device);
@@ -441,7 +456,7 @@ export default function DeviceScreen() {
         phosphorus: reading.phosphorus,
         potassium: reading.potassium,
         ph: reading.pH,
-        moisture: reading.moisture,
+        moisture: reading.moisture !== null ? Math.round(reading.moisture) : null, // Round to integer
         temperature: reading.temperature,
         humidity: reading.humidity,
         soil_conductivity: reading.soilConductivity,
@@ -466,9 +481,15 @@ export default function DeviceScreen() {
     }
   };
 
-  // Add reading to batch and save when batch reaches 10
+  // Add reading to batch and save when batch reaches 30
   const addToBatch = (newData: SensorData) => {
     if (!connectedDevice) return;
+    
+    // If batch was already completed, don't add more data
+    if (batchCompleted) {
+      console.log('⏸️ Batch already completed. Stop collecting until manually restarted.');
+      return;
+    }
     
     // Check if data has actually changed
     if (!hasDataChanged(newData, previousSensorData)) {
@@ -487,14 +508,15 @@ export default function DeviceScreen() {
     setSensorBatch(prevBatch => {
       const newBatch = [...prevBatch, reading];
       
-      // If batch reaches 10, save to Supabase
-      if (newBatch.length >= 10) {
-        console.log('Batch full (10 readings), saving to Supabase...');
+      // If batch reaches 30, save to Supabase
+      if (newBatch.length >= 30) {
+        console.log('Batch full (30 readings), saving to Supabase...');
         saveBatchToSupabase(newBatch);
+        setBatchCompleted(true); // Mark batch as completed
         return []; // Clear batch after saving
       }
       
-      console.log(`Batch size: ${newBatch.length}/10`);
+      console.log(`Batch size: ${newBatch.length}/30`);
       return newBatch;
     });
 
@@ -565,13 +587,26 @@ export default function DeviceScreen() {
               <View style={styles.batchStatus}>
                 <Ionicons name="cloud-upload-outline" size={16} color="#9e9c93" />
                 <Text style={styles.batchStatusText}>
-                  Batch: {sensorBatch.length}/10 readings
+                  Batch: {batchCompleted ? 'Completed ✓' : `${sensorBatch.length}/30 readings`}
                 </Text>
               </View>
-              {sensorBatch.length > 0 && (
+              {!batchCompleted && sensorBatch.length > 0 && (
                 <View style={styles.batchProgress}>
-                  <View style={[styles.batchProgressFill, { width: `${(sensorBatch.length / 10) * 100}%` }]} />
+                  <View style={[styles.batchProgressFill, { width: `${(sensorBatch.length / 30) * 100}%` }]} />
                 </View>
+              )}
+              {batchCompleted && (
+                <TouchableOpacity 
+                  style={styles.restartBatchButton} 
+                  onPress={() => {
+                    setBatchCompleted(false);
+                    setSensorBatch([]);
+                    console.log('🔄 Batch collection restarted manually');
+                  }}
+                >
+                  <Ionicons name="refresh" size={14} color="#0bda95" />
+                  <Text style={styles.restartBatchText}>Restart</Text>
+                </TouchableOpacity>
               )}
             </View>
             
@@ -915,6 +950,21 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#0bda95',
     borderRadius: 2,
+  },
+  restartBatchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#46474a',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  restartBatchText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0bda95',
   },
   disconnectButton: {
     backgroundColor: '#fb444a',

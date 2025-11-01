@@ -38,23 +38,41 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
 
   const validateSensorData = (data: SensorData): boolean => {
     // Check if GPS data is real (not zero/dummy)
-    // Data is considered invalid if:
-    // 1. Latitude is 0 or null
-    // 2. Longitude is 0 or null
-    // 3. Both lat and lon are exactly 0.0 (dummy GPS)
+    console.log('🔍 Validating GPS data:', {
+      lat: data.latitude,
+      lon: data.longitude,
+      sat: data.satelliteCount,
+    });
     
-    const hasRealGPS = 
-      data.latitude !== null && 
-      data.longitude !== null && 
-      !(data.latitude === 0 && data.longitude === 0);
+    // Data is considered VALID if:
+    // 1. Latitude is not null AND not exactly 0
+    // 2. Longitude is not null AND not exactly 0
+    // 3. At least one coordinate is non-zero (more lenient)
+    // 4. Satellite count > 0 indicates GPS lock
     
-    return hasRealGPS;
+    const hasValidLat = data.latitude !== null && Math.abs(data.latitude) > 0.0001;
+    const hasValidLon = data.longitude !== null && Math.abs(data.longitude) > 0.0001;
+    const hasSatellites = data.satelliteCount !== null && data.satelliteCount > 0;
+    
+    // Valid if BOTH coordinates are non-zero OR we have satellites
+    const isValid = (hasValidLat && hasValidLon) || hasSatellites;
+    
+    console.log('🔍 Validation result:', {
+      validLat: hasValidLat,
+      validLon: hasValidLon,
+      satellites: hasSatellites,
+      finalResult: isValid ? '✅ VALID' : '❌ INVALID (Waiting for GPS lock...)',
+    });
+    
+    return isValid;
   };
 
   const updateSensorData = (data: SensorData) => {
+    console.log('📊 Updating sensor data...');
     const isValid = validateSensorData(data);
     const validatedData = { ...data, isValid };
     
+    console.log('💾 Setting latest sensor data with isValid:', isValid);
     setLatestSensorData(validatedData);
     setIsDataValid(isValid);
     
@@ -68,138 +86,55 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
   const startReadingData = (device: BluetoothDevice) => {
     console.log('🔵 Starting persistent Bluetooth data reading...');
     
-    let dataBuffer = ''; // Buffer to accumulate incomplete lines
-    let accumulatedData: Partial<SensorData> = {}; // Accumulate complete dataset
-    
     // Subscribe to data events from Classic Bluetooth
     dataSubscriptionRef.current = device.onDataReceived((data) => {
       try {
-        // Data comes as string from Classic Bluetooth
-        // New Format (multi-line):
-        // Lat: 0.000000
-        // Lon: 0.000000
-        // Set0.00Heading: 101.56(N): 0.00
-        // (P): 0.00
-        // (K): 0.00(M)0.00 % || Temp: 26.00 °C || C: 0.00 uS/cm || pH: 8.20
+        // Data comes as a single line string from Classic Bluetooth
+        // Format: "Lat: 16.495142  Lon: 80.499062  Set: 6.00  Heading: 92.29  (N): 11.00  (P): 14.00  (K): 36.00  (M): 53.70  Temp: 25.50  C: 185.00  pH: 8.60"
         
-        const receivedData = data.data;
+        const receivedData = data.data.trim();
         console.log('📥 Received Bluetooth data:', receivedData);
 
-        // Add to buffer
-        dataBuffer += receivedData;
-        
-        // Process complete lines (ending with newline)
-        const lines = dataBuffer.split('\n');
-        
-        // Keep the last incomplete line in buffer
-        dataBuffer = lines.pop() || '';
-        
-        // Parse the complete lines and accumulate data
-        let shouldUpdate = false;
-        
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine) continue;
-          
-          // Parse Latitude: "Lat: 0.000000"
-          if (trimmedLine.startsWith('Lat:')) {
-            const match = trimmedLine.match(/Lat:\s*([\d.]+)/);
-            if (match) {
-              accumulatedData.latitude = parseFloat(match[1]);
-              shouldUpdate = true;
-            }
-          }
-          
-          // Parse Longitude: "Lon: 0.000000"
-          else if (trimmedLine.startsWith('Lon:')) {
-            const match = trimmedLine.match(/Lon:\s*([\d.]+)/);
-            if (match) {
-              accumulatedData.longitude = parseFloat(match[1]);
-              shouldUpdate = true;
-            }
-          }
-          
-          // Parse complex line with Heading, N, P, K, M, Temp, C, pH
-          // Example: "Set0.00Heading: 101.56(N): 0.00" or "(P): 0.00" or "(K): 0.00(M)0.00 % || Temp: 26.00 °C || C: 0.00 uS/cm || pH: 8.20"
-          else {
-            // Extract Heading/Bearing
-            const headingMatch = trimmedLine.match(/Heading:\s*([\d.]+)/);
-            if (headingMatch) {
-              accumulatedData.bearing = parseFloat(headingMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Nitrogen: "(N): 0.00"
-            const nitrogenMatch = trimmedLine.match(/\(N\):\s*([\d.]+)/);
-            if (nitrogenMatch) {
-              accumulatedData.nitrogen = parseFloat(nitrogenMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Phosphorus: "(P): 0.00"
-            const phosphorusMatch = trimmedLine.match(/\(P\):\s*([\d.]+)/);
-            if (phosphorusMatch) {
-              accumulatedData.phosphorus = parseFloat(phosphorusMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Potassium: "(K): 0.00"
-            const potassiumMatch = trimmedLine.match(/\(K\):\s*([\d.]+)/);
-            if (potassiumMatch) {
-              accumulatedData.potassium = parseFloat(potassiumMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Moisture: "(M)0.00 %"
-            const moistureMatch = trimmedLine.match(/\(M\)([\d.]+)\s*%/);
-            if (moistureMatch) {
-              accumulatedData.moisture = parseFloat(moistureMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Temperature: "Temp: 26.00 °C" or "Temp: 25.40   C"
-            const tempMatch = trimmedLine.match(/Temp:\s*([\d.]+)\s*[°]?C/);
-            if (tempMatch) {
-              accumulatedData.temperature = parseFloat(tempMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract Soil Conductivity: "C: 0.00 uS/cm"
-            const conductivityMatch = trimmedLine.match(/C:\s*([\d.]+)\s*uS\/cm/);
-            if (conductivityMatch) {
-              accumulatedData.soilConductivity = parseFloat(conductivityMatch[1]);
-              shouldUpdate = true;
-            }
-            
-            // Extract pH: "pH: 8.20"
-            const phMatch = trimmedLine.match(/pH:\s*([\d.]+)/);
-            if (phMatch) {
-              accumulatedData.pH = parseFloat(phMatch[1]);
-              shouldUpdate = true;
-              
-              // pH is typically the last value in a complete reading
-              // When we get pH, update with the complete accumulated data
-              const completeData: SensorData = {
-                latitude: accumulatedData.latitude ?? null,
-                longitude: accumulatedData.longitude ?? null,
-                satelliteCount: accumulatedData.satelliteCount ?? null,
-                bearing: accumulatedData.bearing ?? null,
-                nitrogen: accumulatedData.nitrogen ?? null,
-                phosphorus: accumulatedData.phosphorus ?? null,
-                potassium: accumulatedData.potassium ?? null,
-                pH: accumulatedData.pH ?? null,
-                moisture: accumulatedData.moisture ?? null,
-                temperature: accumulatedData.temperature ?? null,
-                humidity: accumulatedData.humidity ?? null,
-                soilConductivity: accumulatedData.soilConductivity ?? null,
-              };
-              
-              // Update context with complete data
-              updateSensorData(completeData);
-              shouldUpdate = false; // Reset flag since we just updated
-            }
-          }
-        }
+        // Parse all values from the single line
+        const latMatch = receivedData.match(/Lat:\s*([\d.]+)/);
+        const lonMatch = receivedData.match(/Lon:\s*([\d.]+)/);
+        const setMatch = receivedData.match(/Set:\s*([\d.]+)/);
+        const headingMatch = receivedData.match(/Heading:\s*([\d.]+)/);
+        const nitrogenMatch = receivedData.match(/\(N\):\s*([\d.]+)/);
+        const phosphorusMatch = receivedData.match(/\(P\):\s*([\d.]+)/);
+        const potassiumMatch = receivedData.match(/\(K\):\s*([\d.]+)/);
+        const moistureMatch = receivedData.match(/\(M\):\s*([\d.]+)/);
+        const tempMatch = receivedData.match(/Temp:\s*([\d.]+)/);
+        const conductivityMatch = receivedData.match(/C:\s*([\d.]+)/);
+        const phMatch = receivedData.match(/pH:\s*([\d.]+)/);
+
+        // Build complete data object
+        const completeData: SensorData = {
+          latitude: latMatch ? parseFloat(latMatch[1]) : null,
+          longitude: lonMatch ? parseFloat(lonMatch[1]) : null,
+          satelliteCount: setMatch ? parseFloat(setMatch[1]) : null,
+          bearing: headingMatch ? parseFloat(headingMatch[1]) : null,
+          nitrogen: nitrogenMatch ? parseFloat(nitrogenMatch[1]) : null,
+          phosphorus: phosphorusMatch ? parseFloat(phosphorusMatch[1]) : null,
+          potassium: potassiumMatch ? parseFloat(potassiumMatch[1]) : null,
+          pH: phMatch ? parseFloat(phMatch[1]) : null,
+          moisture: moistureMatch ? parseFloat(moistureMatch[1]) : null,
+          temperature: tempMatch ? parseFloat(tempMatch[1]) : null,
+          humidity: null,
+          soilConductivity: conductivityMatch ? parseFloat(conductivityMatch[1]) : null,
+        };
+
+        console.log('📦 Parsed complete data:', {
+          lat: completeData.latitude,
+          lon: completeData.longitude,
+          N: completeData.nitrogen,
+          P: completeData.phosphorus,
+          K: completeData.potassium,
+          pH: completeData.pH,
+        });
+
+        // Update context with complete data
+        updateSensorData(completeData);
       } catch (error) {
         console.error('❌ Error processing Bluetooth data:', error);
       }
