@@ -60,6 +60,8 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
     
     if (!isValid) {
       console.log('⚠️ Data validation failed: GPS coordinates are zero/invalid');
+    } else {
+      console.log('✅ Data validated: GPS coordinates are valid, batching enabled');
     }
   };
 
@@ -67,6 +69,7 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
     console.log('🔵 Starting persistent Bluetooth data reading...');
     
     let dataBuffer = ''; // Buffer to accumulate incomplete lines
+    let accumulatedData: Partial<SensorData> = {}; // Accumulate complete dataset
     
     // Subscribe to data events from Classic Bluetooth
     dataSubscriptionRef.current = device.onDataReceived((data) => {
@@ -91,23 +94,8 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
         // Keep the last incomplete line in buffer
         dataBuffer = lines.pop() || '';
         
-        // Parse the complete lines
-        let parsedData: Partial<SensorData> = {
-          latitude: null,
-          longitude: null,
-          satelliteCount: null,
-          bearing: null,
-          nitrogen: null,
-          phosphorus: null,
-          potassium: null,
-          pH: null,
-          moisture: null,
-          temperature: null,
-          humidity: null,
-          soilConductivity: null,
-        };
-        
-        let hasValidData = false;
+        // Parse the complete lines and accumulate data
+        let shouldUpdate = false;
         
         for (const line of lines) {
           const trimmedLine = line.trim();
@@ -117,8 +105,8 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
           if (trimmedLine.startsWith('Lat:')) {
             const match = trimmedLine.match(/Lat:\s*([\d.]+)/);
             if (match) {
-              parsedData.latitude = parseFloat(match[1]);
-              hasValidData = true;
+              accumulatedData.latitude = parseFloat(match[1]);
+              shouldUpdate = true;
             }
           }
           
@@ -126,8 +114,8 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
           else if (trimmedLine.startsWith('Lon:')) {
             const match = trimmedLine.match(/Lon:\s*([\d.]+)/);
             if (match) {
-              parsedData.longitude = parseFloat(match[1]);
-              hasValidData = true;
+              accumulatedData.longitude = parseFloat(match[1]);
+              shouldUpdate = true;
             }
           }
           
@@ -137,65 +125,80 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
             // Extract Heading/Bearing
             const headingMatch = trimmedLine.match(/Heading:\s*([\d.]+)/);
             if (headingMatch) {
-              parsedData.bearing = parseFloat(headingMatch[1]);
-              hasValidData = true;
+              accumulatedData.bearing = parseFloat(headingMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract Nitrogen: "(N): 0.00"
             const nitrogenMatch = trimmedLine.match(/\(N\):\s*([\d.]+)/);
             if (nitrogenMatch) {
-              parsedData.nitrogen = parseFloat(nitrogenMatch[1]);
-              hasValidData = true;
+              accumulatedData.nitrogen = parseFloat(nitrogenMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract Phosphorus: "(P): 0.00"
             const phosphorusMatch = trimmedLine.match(/\(P\):\s*([\d.]+)/);
             if (phosphorusMatch) {
-              parsedData.phosphorus = parseFloat(phosphorusMatch[1]);
-              hasValidData = true;
+              accumulatedData.phosphorus = parseFloat(phosphorusMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract Potassium: "(K): 0.00"
             const potassiumMatch = trimmedLine.match(/\(K\):\s*([\d.]+)/);
             if (potassiumMatch) {
-              parsedData.potassium = parseFloat(potassiumMatch[1]);
-              hasValidData = true;
+              accumulatedData.potassium = parseFloat(potassiumMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract Moisture: "(M)0.00 %"
             const moistureMatch = trimmedLine.match(/\(M\)([\d.]+)\s*%/);
             if (moistureMatch) {
-              parsedData.moisture = parseFloat(moistureMatch[1]);
-              hasValidData = true;
+              accumulatedData.moisture = parseFloat(moistureMatch[1]);
+              shouldUpdate = true;
             }
             
-            // Extract Temperature: "Temp: 26.00 °C"
-            const tempMatch = trimmedLine.match(/Temp:\s*([\d.]+)\s*°C/);
+            // Extract Temperature: "Temp: 26.00 °C" or "Temp: 25.40   C"
+            const tempMatch = trimmedLine.match(/Temp:\s*([\d.]+)\s*[°]?C/);
             if (tempMatch) {
-              parsedData.temperature = parseFloat(tempMatch[1]);
-              hasValidData = true;
+              accumulatedData.temperature = parseFloat(tempMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract Soil Conductivity: "C: 0.00 uS/cm"
             const conductivityMatch = trimmedLine.match(/C:\s*([\d.]+)\s*uS\/cm/);
             if (conductivityMatch) {
-              parsedData.soilConductivity = parseFloat(conductivityMatch[1]);
-              hasValidData = true;
+              accumulatedData.soilConductivity = parseFloat(conductivityMatch[1]);
+              shouldUpdate = true;
             }
             
             // Extract pH: "pH: 8.20"
             const phMatch = trimmedLine.match(/pH:\s*([\d.]+)/);
             if (phMatch) {
-              parsedData.pH = parseFloat(phMatch[1]);
-              hasValidData = true;
+              accumulatedData.pH = parseFloat(phMatch[1]);
+              shouldUpdate = true;
+              
+              // pH is typically the last value in a complete reading
+              // When we get pH, update with the complete accumulated data
+              const completeData: SensorData = {
+                latitude: accumulatedData.latitude ?? null,
+                longitude: accumulatedData.longitude ?? null,
+                satelliteCount: accumulatedData.satelliteCount ?? null,
+                bearing: accumulatedData.bearing ?? null,
+                nitrogen: accumulatedData.nitrogen ?? null,
+                phosphorus: accumulatedData.phosphorus ?? null,
+                potassium: accumulatedData.potassium ?? null,
+                pH: accumulatedData.pH ?? null,
+                moisture: accumulatedData.moisture ?? null,
+                temperature: accumulatedData.temperature ?? null,
+                humidity: accumulatedData.humidity ?? null,
+                soilConductivity: accumulatedData.soilConductivity ?? null,
+              };
+              
+              // Update context with complete data
+              updateSensorData(completeData);
+              shouldUpdate = false; // Reset flag since we just updated
             }
           }
-        }
-        
-        // Only update if we have some valid data
-        if (hasValidData) {
-          // Update context with new data - accessible from all tabs
-          updateSensorData(parsedData as SensorData);
         }
       } catch (error) {
         console.error('❌ Error processing Bluetooth data:', error);
