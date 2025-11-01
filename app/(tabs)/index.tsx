@@ -57,7 +57,7 @@ const MAX_LIVE_DATA_POINTS = 20;
 
 export default function DashboardScreen() {
   const { signOut } = useAuth();
-  const { latestSensorData, isConnected } = useBluetooth();
+  const { latestSensorData, isConnected, isDataValid } = useBluetooth();
   const [predictionData, setPredictionData] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +315,17 @@ export default function DashboardScreen() {
                 <Ionicons name="refresh" size={20} color="#9e9c93" />
               </TouchableOpacity>
             </View>
+            
+            {/* Data Validity Mini Indicator */}
+            {!isDataValid && (
+              <View style={styles.miniValidityWarning}>
+                <Ionicons name="alert-circle" size={14} color="#ffa500" />
+                <Text style={styles.miniValidityText}>
+                  Waiting for GPS lock - data not saved
+                </Text>
+              </View>
+            )}
+            
             <View style={styles.grid}>
               <TouchableOpacity 
                 style={[styles.card, selectedNutrient === 'nitrogen' && styles.cardSelected]}
@@ -662,8 +673,25 @@ const styles = StyleSheet.create({
   liveText: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#fb444a',
     letterSpacing: 0.5,
+  },
+  miniValidityWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+    backgroundColor: 'rgba(255, 165, 0, 0.1)',
+    borderRadius: 6,
+    borderLeftWidth: 3,
+    borderLeftColor: '#ffa500',
+  },
+  miniValidityText: {
+    fontSize: 11,
+    color: '#ffa500',
+    fontWeight: '500',
   },
   grid: {
     flexDirection: 'row',

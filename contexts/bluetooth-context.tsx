@@ -11,6 +11,10 @@ export interface SensorData {
   potassium: number | null;
   pH: number | null;
   moisture: number | null;
+  temperature: number | null;
+  humidity: number | null;
+  soilConductivity: number | null;
+  isValid?: boolean; // Indicates if data is real (not dummy/zero GPS)
 }
 
 interface BluetoothContextType {
@@ -20,6 +24,7 @@ interface BluetoothContextType {
   connectedDevice: BluetoothDevice | null;
   connectToDevice: (device: BluetoothDevice) => Promise<void>;
   disconnectDevice: () => Promise<void>;
+  isDataValid: boolean; // New: indicates if current data is valid for batching
 }
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -28,51 +33,169 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
   const [latestSensorData, setLatestSensorData] = useState<SensorData | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectedDevice, setConnectedDevice] = useState<BluetoothDevice | null>(null);
+  const [isDataValid, setIsDataValid] = useState(false);
   const dataSubscriptionRef = useRef<any>(null);
 
+  const validateSensorData = (data: SensorData): boolean => {
+    // Check if GPS data is real (not zero/dummy)
+    // Data is considered invalid if:
+    // 1. Latitude is 0 or null
+    // 2. Longitude is 0 or null
+    // 3. Both lat and lon are exactly 0.0 (dummy GPS)
+    
+    const hasRealGPS = 
+      data.latitude !== null && 
+      data.longitude !== null && 
+      !(data.latitude === 0 && data.longitude === 0);
+    
+    return hasRealGPS;
+  };
+
   const updateSensorData = (data: SensorData) => {
-    setLatestSensorData(data);
+    const isValid = validateSensorData(data);
+    const validatedData = { ...data, isValid };
+    
+    setLatestSensorData(validatedData);
+    setIsDataValid(isValid);
+    
+    if (!isValid) {
+      console.log('⚠️ Data validation failed: GPS coordinates are zero/invalid');
+    }
   };
 
   const startReadingData = (device: BluetoothDevice) => {
     console.log('🔵 Starting persistent Bluetooth data reading...');
     
+    let dataBuffer = ''; // Buffer to accumulate incomplete lines
+    
     // Subscribe to data events from Classic Bluetooth
     dataSubscriptionRef.current = device.onDataReceived((data) => {
       try {
         // Data comes as string from Classic Bluetooth
-        // Format: "latitude, longitude, satelliteCount, bearing, N: nitrogen, P: phosphorus, K: potassium, pH: pH, M: moisture"
-        // Example: "18.4, 80.9, 6, 4, N: 23, P: 12, K: 25, pH: 7.5, M: 85"
+        // New Format (multi-line):
+        // Lat: 0.000000
+        // Lon: 0.000000
+        // Set0.00Heading: 101.56(N): 0.00
+        // (P): 0.00
+        // (K): 0.00(M)0.00 % || Temp: 26.00 °C || C: 0.00 uS/cm || pH: 8.20
+        
         const receivedData = data.data;
         console.log('📥 Received Bluetooth data:', receivedData);
 
-        // Parse the received data
-        const parts = receivedData.split(',').map((part: string) => part.trim());
+        // Add to buffer
+        dataBuffer += receivedData;
         
-        if (parts.length >= 4) {
-          const parsedData: SensorData = {
-            latitude: parseFloat(parts[0]) || null,
-            longitude: parseFloat(parts[1]) || null,
-            satelliteCount: parseInt(parts[2]) || null,
-            bearing: parseFloat(parts[3]) || null,
-            nitrogen: null,
-            phosphorus: null,
-            potassium: null,
-            pH: null,
-            moisture: null,
-          };
-
-          // Parse nutrient data (N, P, K, pH, M)
-          parts.slice(4).forEach((item: string) => {
-            if (item.includes('N:')) parsedData.nitrogen = parseFloat(item.split(':')[1]) || null;
-            else if (item.includes('P:')) parsedData.phosphorus = parseFloat(item.split(':')[1]) || null;
-            else if (item.includes('K:')) parsedData.potassium = parseFloat(item.split(':')[1]) || null;
-            else if (item.includes('pH:')) parsedData.pH = parseFloat(item.split(':')[1]) || null;
-            else if (item.includes('M:')) parsedData.moisture = parseFloat(item.split(':')[1]) || null;
-          });
+        // Process complete lines (ending with newline)
+        const lines = dataBuffer.split('\n');
+        
+        // Keep the last incomplete line in buffer
+        dataBuffer = lines.pop() || '';
+        
+        // Parse the complete lines
+        let parsedData: Partial<SensorData> = {
+          latitude: null,
+          longitude: null,
+          satelliteCount: null,
+          bearing: null,
+          nitrogen: null,
+          phosphorus: null,
+          potassium: null,
+          pH: null,
+          moisture: null,
+          temperature: null,
+          humidity: null,
+          soilConductivity: null,
+        };
+        
+        let hasValidData = false;
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
           
+          // Parse Latitude: "Lat: 0.000000"
+          if (trimmedLine.startsWith('Lat:')) {
+            const match = trimmedLine.match(/Lat:\s*([\d.]+)/);
+            if (match) {
+              parsedData.latitude = parseFloat(match[1]);
+              hasValidData = true;
+            }
+          }
+          
+          // Parse Longitude: "Lon: 0.000000"
+          else if (trimmedLine.startsWith('Lon:')) {
+            const match = trimmedLine.match(/Lon:\s*([\d.]+)/);
+            if (match) {
+              parsedData.longitude = parseFloat(match[1]);
+              hasValidData = true;
+            }
+          }
+          
+          // Parse complex line with Heading, N, P, K, M, Temp, C, pH
+          // Example: "Set0.00Heading: 101.56(N): 0.00" or "(P): 0.00" or "(K): 0.00(M)0.00 % || Temp: 26.00 °C || C: 0.00 uS/cm || pH: 8.20"
+          else {
+            // Extract Heading/Bearing
+            const headingMatch = trimmedLine.match(/Heading:\s*([\d.]+)/);
+            if (headingMatch) {
+              parsedData.bearing = parseFloat(headingMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Nitrogen: "(N): 0.00"
+            const nitrogenMatch = trimmedLine.match(/\(N\):\s*([\d.]+)/);
+            if (nitrogenMatch) {
+              parsedData.nitrogen = parseFloat(nitrogenMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Phosphorus: "(P): 0.00"
+            const phosphorusMatch = trimmedLine.match(/\(P\):\s*([\d.]+)/);
+            if (phosphorusMatch) {
+              parsedData.phosphorus = parseFloat(phosphorusMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Potassium: "(K): 0.00"
+            const potassiumMatch = trimmedLine.match(/\(K\):\s*([\d.]+)/);
+            if (potassiumMatch) {
+              parsedData.potassium = parseFloat(potassiumMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Moisture: "(M)0.00 %"
+            const moistureMatch = trimmedLine.match(/\(M\)([\d.]+)\s*%/);
+            if (moistureMatch) {
+              parsedData.moisture = parseFloat(moistureMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Temperature: "Temp: 26.00 °C"
+            const tempMatch = trimmedLine.match(/Temp:\s*([\d.]+)\s*°C/);
+            if (tempMatch) {
+              parsedData.temperature = parseFloat(tempMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract Soil Conductivity: "C: 0.00 uS/cm"
+            const conductivityMatch = trimmedLine.match(/C:\s*([\d.]+)\s*uS\/cm/);
+            if (conductivityMatch) {
+              parsedData.soilConductivity = parseFloat(conductivityMatch[1]);
+              hasValidData = true;
+            }
+            
+            // Extract pH: "pH: 8.20"
+            const phMatch = trimmedLine.match(/pH:\s*([\d.]+)/);
+            if (phMatch) {
+              parsedData.pH = parseFloat(phMatch[1]);
+              hasValidData = true;
+            }
+          }
+        }
+        
+        // Only update if we have some valid data
+        if (hasValidData) {
           // Update context with new data - accessible from all tabs
-          updateSensorData(parsedData);
+          updateSensorData(parsedData as SensorData);
         }
       } catch (error) {
         console.error('❌ Error processing Bluetooth data:', error);
@@ -114,6 +237,7 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
       setConnectedDevice(null);
       setIsConnected(false);
       setLatestSensorData(null);
+      setIsDataValid(false);
       
       console.log('✅ Device disconnected from context');
     } catch (error) {
@@ -139,6 +263,7 @@ export const BluetoothProvider = ({ children }: { children: ReactNode }) => {
         connectedDevice,
         connectToDevice,
         disconnectDevice,
+        isDataValid,
       }}
     >
       {children}

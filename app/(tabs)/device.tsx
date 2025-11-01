@@ -36,7 +36,7 @@ interface SensorReading extends SensorData {
 }
 
 export default function DeviceScreen() {
-  const { latestSensorData, isConnected, connectedDevice, connectToDevice: connectDeviceInContext, disconnectDevice: disconnectDeviceInContext } = useBluetooth();
+  const { latestSensorData, isConnected, connectedDevice, connectToDevice: connectDeviceInContext, disconnectDevice: disconnectDeviceInContext, isDataValid } = useBluetooth();
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
   const [showAllDevices, setShowAllDevices] = useState(false);
   const [hasPermissions, setHasPermissions] = useState(false);
@@ -78,10 +78,14 @@ export default function DeviceScreen() {
       // Update local sensor data display
       setSensorData(latestSensorData);
       
-      // Add to batch if data has changed
-      addToBatch(latestSensorData);
+      // Only add to batch if data is valid (real GPS coordinates)
+      if (isDataValid) {
+        addToBatch(latestSensorData);
+      } else {
+        console.log('⏭️ Skipping invalid data from batch (GPS coordinates are zero)');
+      }
     }
-  }, [latestSensorData, isConnected]);
+  }, [latestSensorData, isConnected, isDataValid]);
 
   const checkBluetoothState = async () => {
     try {
@@ -293,14 +297,22 @@ export default function DeviceScreen() {
     }
   };
 
+  const isTargetDevice = (name: string | null): boolean => {
+    if (!name) return false;
+    const upperName = name.toUpperCase();
+    return upperName.includes('ESP') || 
+           upperName.includes('LORA') || 
+           upperName.includes('RECEIVER');
+  };
+
   const sortDevices = (devices: ScannedDevice[]) => {
-    // Sort: ESP devices first, then by signal strength
+    // Sort: Target devices (ESP/LoRa/Receiver) first, then by signal strength
     return devices.sort((a, b) => {
-      const aIsESP = a.name?.toUpperCase().includes('ESP') || false;
-      const bIsESP = b.name?.toUpperCase().includes('ESP') || false;
+      const aIsTarget = isTargetDevice(a.name);
+      const bIsTarget = isTargetDevice(b.name);
       
-      if (aIsESP && !bIsESP) return -1;
-      if (!aIsESP && bIsESP) return 1;
+      if (aIsTarget && !bIsTarget) return -1;
+      if (!aIsTarget && bIsTarget) return 1;
       
       // Then by RSSI (signal strength) - higher is better
       const aRssi = a.rssi || -999;
@@ -490,27 +502,27 @@ export default function DeviceScreen() {
   };
 
   const renderDevice = ({ item }: { item: ScannedDevice }) => {
-    const isESP = item.name?.toUpperCase().includes('ESP') || false;
+    const isTarget = isTargetDevice(item.name);
     
     return (
       <TouchableOpacity 
-        style={[styles.deviceCard, isESP && styles.deviceCardESP]}
+        style={[styles.deviceCard, isTarget && styles.deviceCardESP]}
         onPress={() => connectToDevice(item.id)}
       >
         <View style={styles.deviceIcon}>
           <Ionicons 
             name="bluetooth" 
             size={28} 
-            color={isESP ? "#0bda95" : "#fb444a"} 
+            color={isTarget ? "#0bda95" : "#fb444a"} 
           />
         </View>
         <View style={styles.deviceInfo}>
           <View style={styles.deviceNameRow}>
             <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
-            {isESP && (
+            {isTarget && (
               <View style={styles.espBadge}>
                 <Ionicons name="flash" size={12} color="#0bda95" />
-                <Text style={styles.espBadgeText}>ESP</Text>
+                <Text style={styles.espBadgeText}>SENSOR</Text>
               </View>
             )}
           </View>
@@ -534,6 +546,18 @@ export default function DeviceScreen() {
             <View style={styles.connectedInfo}>
               <Ionicons name="checkmark-circle" size={24} color="#0bda95" />
               <Text style={styles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
+            </View>
+            
+            {/* Data Validity Indicator */}
+            <View style={[styles.validityIndicator, isDataValid ? styles.validityIndicatorValid : styles.validityIndicatorInvalid]}>
+              <Ionicons 
+                name={isDataValid ? "checkmark-circle" : "alert-circle"} 
+                size={14} 
+                color={isDataValid ? "#0bda95" : "#ffa500"} 
+              />
+              <Text style={styles.validityText}>
+                {isDataValid ? 'Valid GPS Data' : 'Waiting for GPS Lock'}
+              </Text>
             </View>
             
             {/* Batch Status Indicator */}
@@ -561,7 +585,7 @@ export default function DeviceScreen() {
       {/* Scan Controls - Only show when NOT connected */}
       {!connectedDevice && (
         <View style={styles.scanSection}>
-          <Text style={styles.sectionTitle}>Scan for ESP32 Devices</Text>
+          <Text style={styles.sectionTitle}>Scan for Sensor Devices</Text>
           
           {/* Bluetooth State Indicator with Toggle */}
           <View style={styles.stateIndicator}>
@@ -618,7 +642,7 @@ export default function DeviceScreen() {
               </Text>
             </TouchableOpacity>
             
-            {devices.length > 0 && devices.some(d => !d.name?.toUpperCase().includes('ESP')) && (
+            {devices.length > 0 && devices.some(d => !isTargetDevice(d.name)) && (
               <TouchableOpacity 
                 style={styles.toggleFilterButton}
                 onPress={() => setShowAllDevices(!showAllDevices)}
@@ -644,7 +668,7 @@ export default function DeviceScreen() {
           {devices.length > 0 && (
             <View style={styles.deviceListCount}>
               <Text style={styles.deviceCountText}>
-                {showAllDevices ? `All Devices (${devices.length})` : `ESP Devices (${devices.filter(d => d.name?.toUpperCase().includes('ESP')).length})`}
+                {showAllDevices ? `All Devices (${devices.length})` : `Sensor Devices (${devices.filter(d => isTargetDevice(d.name)).length})`}
               </Text>
             </View>
           )}
@@ -681,7 +705,7 @@ export default function DeviceScreen() {
 
       {!connectedDevice ? (
         <FlatList
-          data={showAllDevices ? devices : devices.filter(d => d.name?.toUpperCase().includes('ESP'))}
+          data={showAllDevices ? devices : devices.filter(d => isTargetDevice(d.name))}
           renderItem={renderDevice}
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}
@@ -838,6 +862,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#e0daca',
+  },
+  validityIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    marginBottom: 12,
+  },
+  validityIndicatorValid: {
+    backgroundColor: 'rgba(11, 218, 149, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(11, 218, 149, 0.3)',
+  },
+  validityIndicatorInvalid: {
+    backgroundColor: 'rgba(255, 165, 0, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 165, 0, 0.3)',
+  },
+  validityText: {
+    fontSize: 12,
+    color: '#e0daca',
+    fontWeight: '500',
   },
   batchStatusContainer: {
     marginBottom: 12,
