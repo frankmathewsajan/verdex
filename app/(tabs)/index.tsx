@@ -5,10 +5,11 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Line, Path, Svg } from 'react-native-svg';
+import { Circle, Line, Path, Svg } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CHART_WIDTH = SCREEN_WIDTH - 80;
+const MAX_LIVE_DATA_POINTS = 300; // Increased from 20 to 300 for better trends
 
 interface PredictionData {
   display_name: string;
@@ -52,8 +53,6 @@ interface LiveDataPoint {
   potassium: number | null;
   pH: number | null;
 }
-
-const MAX_LIVE_DATA_POINTS = 20;
 
 export default function DashboardScreen() {
   const { signOut } = useAuth();
@@ -173,44 +172,103 @@ export default function DashboardScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  // Optimize data by aggregating and removing near-duplicates (same as history.tsx)
+  const optimizeChartData = (values: number[]) => {
+    if (values.length <= 30) return values; // No need to optimize if already small
+    
+    const BUCKET_SIZE = 15; // Group every 15 readings (captures changes, removes redundant continuous IoT data)
+    const SIMILARITY_THRESHOLD = 0.1; // Values within 0.1 are considered similar
+    const MAX_REPEATS = 2; // Skip if same value repeats more than twice
+    
+    // Step 1: Aggregate into buckets (calculate mean)
+    const aggregated: number[] = [];
+    for (let i = 0; i < values.length; i += BUCKET_SIZE) {
+      const bucket = values.slice(i, i + BUCKET_SIZE);
+      const mean = bucket.reduce((sum, val) => sum + val, 0) / bucket.length;
+      aggregated.push(mean);
+    }
+    
+    // Step 2: Remove near-duplicates that repeat too often
+    const optimized: number[] = [aggregated[0]]; // Always keep first point
+    let repeatCount = 1;
+    let lastValue = aggregated[0];
+    
+    for (let i = 1; i < aggregated.length; i++) {
+      const currentValue = aggregated[i];
+      const diff = Math.abs(currentValue - lastValue);
+      
+      if (diff < SIMILARITY_THRESHOLD) {
+        repeatCount++;
+        // Only keep if not exceeded max repeats
+        if (repeatCount <= MAX_REPEATS) {
+          optimized.push(currentValue);
+        }
+      } else {
+        // Value changed significantly, reset counter
+        repeatCount = 1;
+        optimized.push(currentValue);
+        lastValue = currentValue;
+      }
+    }
+    
+    // Always keep last point
+    if (aggregated.length > 0 && optimized[optimized.length - 1] !== aggregated[aggregated.length - 1]) {
+      optimized.push(aggregated[aggregated.length - 1]);
+    }
+    
+    return optimized;
+  };
+
   const generateChartPath = (data: number[], width: number, height: number) => {
-    if (!data || data.length === 0) return '';
+    if (!data || data.length === 0) return { path: '', values: [], indices: [] };
     
-    const min = Math.min(...data);
-    const max = Math.max(...data);
+    // Optimize data for better performance and trend visibility
+    const optimizedData = optimizeChartData(data);
+    
+    const min = Math.min(...optimizedData);
+    const max = Math.max(...optimizedData);
     const range = max - min || 1;
-    const xStep = width / (data.length - 1 || 1);
+    const xStep = width / (optimizedData.length - 1 || 1);
     
-    const points = data.map((value, index) => {
+    const points = optimizedData.map((value, index) => {
       const x = index * xStep;
       const y = height - ((value - min) / range) * height;
-      return `${x},${y}`;
+      return { x, y, value };
     });
     
-    return `M ${points.join(' L ')}`;
+    const path = `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}`;
+    
+    return { 
+      path, 
+      values: optimizedData, 
+      indices: points.map((_, i) => i),
+      points: points
+    };
   };
 
   const generateLiveChartPath = (data: (number | null)[], width: number, height: number) => {
-    if (!data || data.length === 0) return '';
+    if (!data || data.length === 0) return { path: '', values: [], points: [] };
     
     const validData = data.filter(v => v !== null) as number[];
-    if (validData.length === 0) return '';
+    if (validData.length === 0) return { path: '', values: [], points: [] };
     
-    const min = Math.min(...validData);
-    const max = Math.max(...validData);
+    // Optimize valid data
+    const optimizedData = optimizeChartData(validData);
+    
+    const min = Math.min(...optimizedData);
+    const max = Math.max(...optimizedData);
     const range = max - min || 1;
-    const xStep = width / (data.length - 1 || 1);
+    const xStep = width / (optimizedData.length - 1 || 1);
     
-    const points: string[] = [];
-    data.forEach((value, index) => {
-      if (value !== null) {
-        const x = index * xStep;
-        const y = height - ((value - min) / range) * height;
-        points.push(`${x},${y}`);
-      }
+    const points = optimizedData.map((value, index) => {
+      const x = index * xStep;
+      const y = height - ((value - min) / range) * height;
+      return { x, y, value };
     });
     
-    return points.length > 0 ? `M ${points.join(' L ')}` : '';
+    const path = points.length > 0 ? `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}` : '';
+    
+    return { path, values: optimizedData, points };
   };
 
   const getNutrientConfig = (type: NutrientType) => {
@@ -377,7 +435,9 @@ export default function DashboardScreen() {
               <View style={styles.liveGraphHeader}>
                 <Ionicons name="analytics" size={24} color="#0bda95" />
                 <Text style={styles.liveGraphTitle}>Real-Time Trends</Text>
-                <Text style={styles.liveDataCount}>{liveData.length} points</Text>
+                <Text style={styles.liveDataCount}>
+                  {liveData.length}/{MAX_LIVE_DATA_POINTS} readings
+                </Text>
               </View>
 
               {/* Main Chart */}
@@ -389,40 +449,80 @@ export default function DashboardScreen() {
                   <Path d={`M 0 120 L ${CHART_WIDTH} 120`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
                   
                   {/* Nitrogen Line */}
-                  <Path
-                    d={generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160)}
-                    stroke="#32cd32"
-                    strokeWidth="2.5"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
+                  {(() => {
+                    const chartData = generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160);
+                    return (
+                      <>
+                        <Path
+                          d={chartData.path}
+                          stroke="#32cd32"
+                          strokeWidth="2.5"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        {chartData.points.map((point, i) => (
+                          <Circle key={`n-${i}`} cx={point.x} cy={point.y} r="3" fill="#32cd32" />
+                        ))}
+                      </>
+                    );
+                  })()}
                   
                   {/* Phosphorus Line */}
-                  <Path
-                    d={generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160)}
-                    stroke="#ff69b4"
-                    strokeWidth="2.5"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
+                  {(() => {
+                    const chartData = generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160);
+                    return (
+                      <>
+                        <Path
+                          d={chartData.path}
+                          stroke="#ff69b4"
+                          strokeWidth="2.5"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        {chartData.points.map((point, i) => (
+                          <Circle key={`p-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff69b4" />
+                        ))}
+                      </>
+                    );
+                  })()}
                   
                   {/* Potassium Line */}
-                  <Path
-                    d={generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160)}
-                    stroke="#9370db"
-                    strokeWidth="2.5"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
+                  {(() => {
+                    const chartData = generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160);
+                    return (
+                      <>
+                        <Path
+                          d={chartData.path}
+                          stroke="#9370db"
+                          strokeWidth="2.5"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        {chartData.points.map((point, i) => (
+                          <Circle key={`k-${i}`} cx={point.x} cy={point.y} r="3" fill="#9370db" />
+                        ))}
+                      </>
+                    );
+                  })()}
                   
                   {/* pH Line (scaled) */}
-                  <Path
-                    d={generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160)}
-                    stroke="#ff6347"
-                    strokeWidth="2.5"
-                    fill="none"
-                    strokeLinecap="round"
-                  />
+                  {(() => {
+                    const chartData = generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160);
+                    return (
+                      <>
+                        <Path
+                          d={chartData.path}
+                          stroke="#ff6347"
+                          strokeWidth="2.5"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        {chartData.points.map((point, i) => (
+                          <Circle key={`ph-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff6347" />
+                        ))}
+                      </>
+                    );
+                  })()}
                 </Svg>
               </View>
 
@@ -502,21 +602,31 @@ export default function DashboardScreen() {
               {/* Chart */}
               <View style={styles.chartContainer}>
                 <Svg height={150} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 150`}>
-                  {selectedPrediction.forecast.length > 0 && (
-                    <>
-                      <Path
-                        d={generateChartPath(selectedPrediction.forecast, CHART_WIDTH, 150)}
-                        stroke={config.color}
-                        strokeWidth="3"
-                        fill="none"
-                        strokeLinecap="round"
-                      />
-                      {/* Grid lines */}
-                      <Line x1="0" y1="37.5" x2={CHART_WIDTH} y2="37.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
-                      <Line x1="0" y1="75" x2={CHART_WIDTH} y2="75" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
-                      <Line x1="0" y1="112.5" x2={CHART_WIDTH} y2="112.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
-                    </>
-                  )}
+                  {selectedPrediction.forecast.length > 0 && (() => {
+                    const chartData = generateChartPath(selectedPrediction.forecast, CHART_WIDTH, 150);
+                    return (
+                      <>
+                        {/* Grid lines */}
+                        <Line x1="0" y1="37.5" x2={CHART_WIDTH} y2="37.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                        <Line x1="0" y1="75" x2={CHART_WIDTH} y2="75" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                        <Line x1="0" y1="112.5" x2={CHART_WIDTH} y2="112.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                        
+                        {/* Forecast Line */}
+                        <Path
+                          d={chartData.path}
+                          stroke={config.color}
+                          strokeWidth="3"
+                          fill="none"
+                          strokeLinecap="round"
+                        />
+                        
+                        {/* Data Points */}
+                        {chartData.points && chartData.points.map((point, i) => (
+                          <Circle key={`forecast-${i}`} cx={point.x} cy={point.y} r="3.5" fill={config.color} />
+                        ))}
+                      </>
+                    );
+                  })()}
                 </Svg>
                 <View style={styles.chartLabels}>
                   <Text style={styles.chartLabelText}>Now</Text>
