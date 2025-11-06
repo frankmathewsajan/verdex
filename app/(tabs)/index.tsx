@@ -349,20 +349,23 @@ export default function DashboardScreen() {
   };
 
   const generateLiveChartPath = (data: (number | null)[], width: number, height: number) => {
-    if (!data || data.length === 0) return { path: '', values: [], points: [] };
+    if (!data || data.length === 0) return { path: '', values: [], points: [], min: 0, max: 0 };
     
     const validData = data.filter(v => v !== null) as number[];
-    if (validData.length === 0) return { path: '', values: [], points: [] };
+    if (validData.length === 0) return { path: '', values: [], points: [], min: 0, max: 0 };
     
     // Optimize valid data
     const optimizedData = optimizeChartData(validData);
     
-    const min = Math.min(...optimizedData);
-    const max = Math.max(...optimizedData);
-    const range = max - min || 1;
-    const xStep = width / (optimizedData.length - 1 || 1);
+    // Apply smoothing to reduce fluctuations
+    const smoothedData = smoothData(optimizedData, 3); // 3-point moving average
     
-    const points = optimizedData.map((value, index) => {
+    const min = Math.min(...smoothedData);
+    const max = Math.max(...smoothedData);
+    const range = max - min || 1;
+    const xStep = width / (smoothedData.length - 1 || 1);
+    
+    const points = smoothedData.map((value, index) => {
       const x = index * xStep;
       const y = height - ((value - min) / range) * height;
       return { x, y, value };
@@ -370,7 +373,25 @@ export default function DashboardScreen() {
     
     const path = points.length > 0 ? `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}` : '';
     
-    return { path, values: optimizedData, points };
+    return { path, values: smoothedData, points, min, max };
+  };
+
+  // Smoothing function to reduce fluctuations
+  const smoothData = (data: number[], windowSize: number = 3): number[] => {
+    if (data.length < windowSize) return data;
+    
+    const smoothed: number[] = [];
+    const halfWindow = Math.floor(windowSize / 2);
+    
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - halfWindow);
+      const end = Math.min(data.length, i + halfWindow + 1);
+      const window = data.slice(start, end);
+      const avg = window.reduce((sum, val) => sum + val, 0) / window.length;
+      smoothed.push(avg);
+    }
+    
+    return smoothed;
   };
 
   const getNutrientConfig = (type: NutrientType) => {
@@ -607,6 +628,14 @@ export default function DashboardScreen() {
 
               {/* Main Chart */}
               <View style={styles.chartContainer}>
+                {/* Y-axis labels */}
+                <View style={styles.yAxisLabels}>
+                  <Text style={styles.axisLabel}>Max</Text>
+                  <Text style={styles.axisLabel}>Mid</Text>
+                  <Text style={styles.axisLabel}>Min</Text>
+                </View>
+                
+                <View style={{ flex: 1 }}>
                   <Svg height={160} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 160`}>
                     {/* Grid lines */}
                     <Path d={`M 0 40 L ${CHART_WIDTH} 40`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
@@ -689,7 +718,11 @@ export default function DashboardScreen() {
                       );
                     })()}
                   </Svg>
+                  
+                  {/* X-axis label */}
+                  <Text style={styles.xAxisLabel}>Time (most recent →)</Text>
                 </View>
+              </View>
 
                 {/* Legend */}
                 <View style={styles.legendContainer}>
@@ -1052,6 +1085,25 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     marginTop: 16,
+    flexDirection: 'row',
+  },
+  yAxisLabels: {
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+    marginRight: 8,
+    height: 160,
+  },
+  axisLabel: {
+    fontSize: 10,
+    color: '#9e9c93',
+    fontWeight: '600',
+  },
+  xAxisLabel: {
+    fontSize: 11,
+    color: '#9e9c93',
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500',
   },
   chartLabels: {
     flexDirection: 'row',
