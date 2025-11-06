@@ -1,5 +1,7 @@
+import GoogleMap from '@/components/google-map';
 import { useAuth } from '@/contexts/auth-context';
 import { useBluetooth } from '@/contexts/bluetooth-context';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -64,6 +66,106 @@ export default function DashboardScreen() {
   const [predictionFailCount, setPredictionFailCount] = useState(0);
   const [predictionDisabled, setPredictionDisabled] = useState(false);
   const [liveData, setLiveData] = useState<LiveDataPoint[]>([]);
+  const [latestDbReading, setLatestDbReading] = useState<{
+    nitrogen: number | null;
+    phosphorus: number | null;
+    potassium: number | null;
+    pH: number | null;
+  } | null>(null);
+  const [mapLocations, setMapLocations] = useState<Array<{
+    latitude: number;
+    longitude: number;
+    isLive: boolean;
+  }>>([]);
+
+  // Fetch map locations from database
+  const fetchMapLocations = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return;
+
+      const { data, error: fetchError } = await supabase
+        .from('sensor_readings')
+        .select('latitude, longitude')
+        .eq('user_id', user.id)
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50); // Get last 50 locations
+
+      if (fetchError) {
+        console.error('Error fetching map locations:', fetchError);
+        return;
+      }
+
+      if (data) {
+        const locations = data.map(loc => ({
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          isLive: false,
+        }));
+
+        // Add current live location if connected
+        if (isConnected && latestSensorData && latestSensorData.latitude && latestSensorData.longitude) {
+          locations.unshift({
+            latitude: latestSensorData.latitude,
+            longitude: latestSensorData.longitude,
+            isLive: true,
+          });
+        }
+
+        setMapLocations(locations);
+      }
+    } catch (err) {
+      console.error('Error in fetchMapLocations:', err);
+    }
+  };
+
+  // Fetch latest reading from database when not connected
+  const fetchLatestReading = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return;
+
+      const { data, error: fetchError } = await supabase
+        .from('sensor_readings')
+        .select('nitrogen, phosphorus, potassium, ph')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching latest reading:', fetchError);
+        return;
+      }
+
+      if (data) {
+        setLatestDbReading({
+          nitrogen: data.nitrogen,
+          phosphorus: data.phosphorus,
+          potassium: data.potassium,
+          pH: data.ph,
+        });
+      }
+    } catch (err) {
+      console.error('Error in fetchLatestReading:', err);
+    }
+  };
+
+  // Fetch latest reading when not connected
+  useEffect(() => {
+    if (!isConnected) {
+      fetchLatestReading();
+    }
+  }, [isConnected]);
+
+  // Fetch map locations on mount and when connection changes
+  useEffect(() => {
+    fetchMapLocations();
+  }, [isConnected, latestSensorData]);
 
   // Add new Bluetooth data to live chart
   useEffect(() => {
@@ -282,16 +384,29 @@ export default function DashboardScreen() {
   };
 
   const getCurrentValue = (type: NutrientType) => {
-    // Use Bluetooth data only
-    if (!latestSensorData) return null;
+    // Use Bluetooth data if connected, otherwise use database data
+    if (isConnected && latestSensorData) {
+      const map = {
+        nitrogen: latestSensorData.nitrogen,
+        phosphorus: latestSensorData.phosphorus,
+        potassium: latestSensorData.potassium,
+        ph: latestSensorData.pH,
+      };
+      return map[type];
+    }
     
-    const map = {
-      nitrogen: latestSensorData.nitrogen,
-      phosphorus: latestSensorData.phosphorus,
-      potassium: latestSensorData.potassium,
-      ph: latestSensorData.pH,
-    };
-    return map[type];
+    // Fallback to database reading when not connected
+    if (latestDbReading) {
+      const map = {
+        nitrogen: latestDbReading.nitrogen,
+        phosphorus: latestDbReading.phosphorus,
+        potassium: latestDbReading.potassium,
+        ph: latestDbReading.pH,
+      };
+      return map[type];
+    }
+    
+    return null;
   };
 
   const removeEmojis = (text: string) => {
@@ -358,189 +473,240 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Current Readings - Only from Bluetooth */}
-        {isConnected && latestSensorData && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Current Readings</Text>
+        {/* Current/Latest Readings - Always visible */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>
+                {isConnected ? 'Current Readings' : 'Latest Readings'}
+              </Text>
+              {isConnected && latestSensorData && (
                 <View style={styles.liveIndicator}>
                   <View style={styles.liveDot} />
                   <Text style={styles.liveText}>LIVE</Text>
                 </View>
-              </View>
-              <TouchableOpacity onPress={() => fetchPredictions(false)}>
-                <Ionicons name="refresh" size={20} color="#9e9c93" />
-              </TouchableOpacity>
+              )}
             </View>
-            
-            {/* Data Validity Mini Indicator */}
-            {!isDataValid && (
-              <View style={styles.miniValidityWarning}>
-                <Ionicons name="alert-circle" size={14} color="#ffa500" />
-                <Text style={styles.miniValidityText}>
-                  Waiting for GPS lock - data not saved
-                </Text>
-              </View>
-            )}
-            
-            <View style={styles.grid}>
-              <TouchableOpacity 
-                style={[styles.card, selectedNutrient === 'nitrogen' && styles.cardSelected]}
-                onPress={() => setSelectedNutrient('nitrogen')}
-              >
-                <Text style={styles.cardLabel}>Nitrogen (N)</Text>
-                <Text style={styles.cardValue}>
-                  {latestSensorData.nitrogen !== null ? `${latestSensorData.nitrogen} ppm` : '--'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.card, selectedNutrient === 'phosphorus' && styles.cardSelected]}
-                onPress={() => setSelectedNutrient('phosphorus')}
-              >
-                <Text style={styles.cardLabel}>Phosphorus (P)</Text>
-                <Text style={styles.cardValue}>
-                  {latestSensorData.phosphorus !== null ? `${latestSensorData.phosphorus} ppm` : '--'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.card, selectedNutrient === 'potassium' && styles.cardSelected]}
-                onPress={() => setSelectedNutrient('potassium')}
-              >
-                <Text style={styles.cardLabel}>Potassium (K)</Text>
-                <Text style={styles.cardValue}>
-                  {latestSensorData.potassium !== null ? `${latestSensorData.potassium} ppm` : '--'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.card, selectedNutrient === 'ph' && styles.cardSelected]}
-                onPress={() => setSelectedNutrient('ph')}
-              >
-                <Text style={styles.cardLabel}>pH Level</Text>
-                <Text style={styles.cardValue}>
-                  {latestSensorData.pH !== null ? latestSensorData.pH.toFixed(1) : '--'}
-                </Text>
-              </TouchableOpacity>
+            <TouchableOpacity onPress={() => {
+              fetchPredictions(false);
+              if (!isConnected) fetchLatestReading();
+            }}>
+              <Ionicons name="refresh" size={20} color="#9e9c93" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Data Validity Mini Indicator */}
+          {isConnected && !isDataValid && (
+            <View style={styles.miniValidityWarning}>
+              <Ionicons name="alert-circle" size={14} color="#ffa500" />
+              <Text style={styles.miniValidityText}>
+                Waiting for GPS lock - data not saved
+              </Text>
             </View>
-            <Text style={styles.timestamp}>
-              ⚡ Real-time from Bluetooth
-            </Text>
+          )}
+          
+          <View style={styles.grid}>
+            <TouchableOpacity 
+              style={[styles.card, selectedNutrient === 'nitrogen' && styles.cardSelected]}
+              onPress={() => setSelectedNutrient('nitrogen')}
+            >
+              <Text style={styles.cardLabel}>Nitrogen (N)</Text>
+              <Text style={styles.cardValue}>
+                {isConnected && latestSensorData && latestSensorData.nitrogen !== null 
+                  ? `${latestSensorData.nitrogen} ppm` 
+                  : (!isConnected && latestDbReading && latestDbReading.nitrogen !== null 
+                    ? `${latestDbReading.nitrogen} ppm` 
+                    : '--')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.card, selectedNutrient === 'phosphorus' && styles.cardSelected]}
+              onPress={() => setSelectedNutrient('phosphorus')}
+            >
+              <Text style={styles.cardLabel}>Phosphorus (P)</Text>
+              <Text style={styles.cardValue}>
+                {isConnected && latestSensorData && latestSensorData.phosphorus !== null 
+                  ? `${latestSensorData.phosphorus} ppm` 
+                  : (!isConnected && latestDbReading && latestDbReading.phosphorus !== null 
+                    ? `${latestDbReading.phosphorus} ppm` 
+                    : '--')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.card, selectedNutrient === 'potassium' && styles.cardSelected]}
+              onPress={() => setSelectedNutrient('potassium')}
+            >
+              <Text style={styles.cardLabel}>Potassium (K)</Text>
+              <Text style={styles.cardValue}>
+                {isConnected && latestSensorData && latestSensorData.potassium !== null 
+                  ? `${latestSensorData.potassium} ppm` 
+                  : (!isConnected && latestDbReading && latestDbReading.potassium !== null 
+                    ? `${latestDbReading.potassium} ppm` 
+                    : '--')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.card, selectedNutrient === 'ph' && styles.cardSelected]}
+              onPress={() => setSelectedNutrient('ph')}
+            >
+              <Text style={styles.cardLabel}>pH Level</Text>
+              <Text style={styles.cardValue}>
+                {isConnected && latestSensorData && latestSensorData.pH !== null 
+                  ? latestSensorData.pH.toFixed(1) 
+                  : (!isConnected && latestDbReading && latestDbReading.pH !== null 
+                    ? latestDbReading.pH.toFixed(1) 
+                    : '--')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Location Map Card - Always visible */}
+        {mapLocations.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.mapCard}>
+              <View style={styles.mapHeader}>
+                <Ionicons name="location" size={24} color="#0bda95" />
+                <Text style={styles.mapTitle}>Reading Locations</Text>
+                <Text style={styles.locationCount}>{mapLocations.length} locations</Text>
+              </View>
+
+              {/* Google Map */}
+              <View style={styles.mapContainer}>
+                <GoogleMap locations={mapLocations} height={250} />
+              </View>
+
+              {/* Location Legend */}
+              <View style={styles.mapLegend}>
+                <View style={styles.legendRow}>
+                  <View style={[styles.mapLegendDot, { backgroundColor: '#fb444a' }]} />
+                  <Text style={styles.mapLegendText}>Live Location (Connected)</Text>
+                </View>
+                <View style={styles.legendRow}>
+                  <View style={[styles.mapLegendDot, { backgroundColor: '#0bda95' }]} />
+                  <Text style={styles.mapLegendText}>Historical Locations</Text>
+                </View>
+              </View>
+            </View>
           </View>
         )}
 
-        {/* Live Graph */}
+        {/* Live Graph - Only visible when connected */}
         {isConnected && liveData.length > 1 && (
           <View style={styles.section}>
             <View style={styles.liveGraphContainer}>
               <View style={styles.liveGraphHeader}>
                 <Ionicons name="analytics" size={24} color="#0bda95" />
                 <Text style={styles.liveGraphTitle}>Real-Time Trends</Text>
-                <Text style={styles.liveDataCount}>
-                  {liveData.length}/{MAX_LIVE_DATA_POINTS} readings
-                </Text>
+                {isConnected && liveData.length > 0 && (
+                  <Text style={styles.liveDataCount}>
+                    {liveData.length}/{MAX_LIVE_DATA_POINTS} readings
+                  </Text>
+                )}
               </View>
 
               {/* Main Chart */}
               <View style={styles.chartContainer}>
-                <Svg height={160} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 160`}>
-                  {/* Grid lines */}
-                  <Path d={`M 0 40 L ${CHART_WIDTH} 40`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
-                  <Path d={`M 0 80 L ${CHART_WIDTH} 80`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
-                  <Path d={`M 0 120 L ${CHART_WIDTH} 120`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
-                  
-                  {/* Nitrogen Line */}
-                  {(() => {
-                    const chartData = generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160);
-                    return (
-                      <>
-                        <Path
-                          d={chartData.path}
-                          stroke="#32cd32"
-                          strokeWidth="2.5"
-                          fill="none"
-                          strokeLinecap="round"
-                        />
-                        {chartData.points.map((point, i) => (
-                          <Circle key={`n-${i}`} cx={point.x} cy={point.y} r="3" fill="#32cd32" />
-                        ))}
-                      </>
-                    );
-                  })()}
-                  
-                  {/* Phosphorus Line */}
-                  {(() => {
-                    const chartData = generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160);
-                    return (
-                      <>
-                        <Path
-                          d={chartData.path}
-                          stroke="#ff69b4"
-                          strokeWidth="2.5"
-                          fill="none"
-                          strokeLinecap="round"
-                        />
-                        {chartData.points.map((point, i) => (
-                          <Circle key={`p-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff69b4" />
-                        ))}
-                      </>
-                    );
-                  })()}
-                  
-                  {/* Potassium Line */}
-                  {(() => {
-                    const chartData = generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160);
-                    return (
-                      <>
-                        <Path
-                          d={chartData.path}
-                          stroke="#9370db"
-                          strokeWidth="2.5"
-                          fill="none"
-                          strokeLinecap="round"
-                        />
-                        {chartData.points.map((point, i) => (
-                          <Circle key={`k-${i}`} cx={point.x} cy={point.y} r="3" fill="#9370db" />
-                        ))}
-                      </>
-                    );
-                  })()}
-                  
-                  {/* pH Line (scaled) */}
-                  {(() => {
-                    const chartData = generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160);
-                    return (
-                      <>
-                        <Path
-                          d={chartData.path}
-                          stroke="#ff6347"
-                          strokeWidth="2.5"
-                          fill="none"
-                          strokeLinecap="round"
-                        />
-                        {chartData.points.map((point, i) => (
-                          <Circle key={`ph-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff6347" />
-                        ))}
-                      </>
-                    );
-                  })()}
-                </Svg>
-              </View>
+                  <Svg height={160} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 160`}>
+                    {/* Grid lines */}
+                    <Path d={`M 0 40 L ${CHART_WIDTH} 40`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                    <Path d={`M 0 80 L ${CHART_WIDTH} 80`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                    <Path d={`M 0 120 L ${CHART_WIDTH} 120`} stroke="#3a3d42" strokeWidth="1" strokeDasharray="4,4" />
+                    
+                    {/* Nitrogen Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#32cd32"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`n-${i}`} cx={point.x} cy={point.y} r="3" fill="#32cd32" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* Phosphorus Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#ff69b4"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`p-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff69b4" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* Potassium Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#9370db"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`k-${i}`} cx={point.x} cy={point.y} r="3" fill="#9370db" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* pH Line (scaled) */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#ff6347"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`ph-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff6347" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </Svg>
+                </View>
 
-              {/* Legend */}
-              <View style={styles.legendContainer}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#32cd32' }]} />
-                  <Text style={styles.legendText}>N</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#ff69b4' }]} />
-                  <Text style={styles.legendText}>P</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#9370db' }]} />
-                  <Text style={styles.legendText}>K</Text>
-                </View>
-                <View style={styles.legendItem}>
+                {/* Legend */}
+                <View style={styles.legendContainer}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#32cd32' }]} />
+                    <Text style={styles.legendText}>N</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#ff69b4' }]} />
+                    <Text style={styles.legendText}>P</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#9370db' }]} />
+                    <Text style={styles.legendText}>K</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
                   <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
                   <Text style={styles.legendText}>pH (×10)</Text>
                 </View>
@@ -549,21 +715,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* No Bluetooth Connection */}
-        {!isConnected && (
-          <View style={styles.section}>
-            <View style={styles.centerContent}>
-              <Ionicons name="bluetooth-outline" size={64} color="#9e9c93" />
-              <Text style={styles.unavailableTitle}>No Bluetooth Connection</Text>
-              <Text style={styles.unavailableText}>
-                Connect to your ESP32 device in the Devices tab to see real-time sensor readings.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Forecast Chart */}
-        {isConnected && latestSensorData && selectedPrediction && (
+        {/* Forecast Chart - Always visible */}
+        {selectedPrediction && (
           <View style={styles.section}>
             <View style={styles.chartCard}>
               <View style={styles.chartHeader}>
@@ -662,8 +815,8 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Predictions Not Available Message */}
-        {isConnected && latestSensorData && !selectedPrediction && (
+        {/* Predictions Not Available Message - Always visible when no predictions */}
+        {!selectedPrediction && (
           <View style={styles.section}>
             <View style={styles.chartCard}>
               <View style={styles.centerContent}>
@@ -672,7 +825,7 @@ export default function DashboardScreen() {
                 <Text style={styles.unavailableText}>
                   {predictionDisabled 
                     ? 'The forecast service failed after multiple attempts. Tap below to retry manually.'
-                    : 'The forecast service is currently offline. Current readings are still available above.'}
+                    : 'The forecast service is currently offline. Predictions will load when service is available.'}
                 </Text>
                 {predictionDisabled && (
                   <TouchableOpacity style={styles.retryButton} onPress={manualRetryPredictions}>
@@ -685,35 +838,33 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Key Metrics */}
-        {isConnected && latestSensorData && (
+        {/* Key Metrics - Always visible when predictions available */}
+        {selectedPrediction && (
           <View style={[styles.section, { paddingBottom: 24 }]}>
             <Text style={styles.sectionTitle}>Statistics</Text>
-            {selectedPrediction && (
-              <View style={styles.metricsGrid}>
-                <View style={styles.metricCard}>
-                  <Ionicons name="trending-up" size={32} color="#9e9c93" />
-                  <Text style={styles.metricValue}>
-                    {selectedPrediction.statistics.range?.toFixed(1) || '--'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Range</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <Ionicons name="stats-chart" size={32} color="#9e9c93" />
-                  <Text style={styles.metricValue}>
-                    {selectedPrediction.statistics.std?.toFixed(2) || '--'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Std Dev</Text>
-                </View>
-                <View style={styles.metricCard}>
-                  <Ionicons name="pulse" size={32} color="#9e9c93" />
-                  <Text style={styles.metricValue}>
-                    {predictionData?.cleaned.data_points || '--'}
-                  </Text>
-                  <Text style={styles.metricLabel}>Data Points</Text>
-                </View>
+            <View style={styles.metricsGrid}>
+              <View style={styles.metricCard}>
+                <Ionicons name="trending-up" size={32} color="#9e9c93" />
+                <Text style={styles.metricValue}>
+                  {selectedPrediction.statistics.range?.toFixed(1) || '--'}
+                </Text>
+                <Text style={styles.metricLabel}>Range</Text>
               </View>
-            )}
+              <View style={styles.metricCard}>
+                <Ionicons name="stats-chart" size={32} color="#9e9c93" />
+                <Text style={styles.metricValue}>
+                  {selectedPrediction.statistics.std?.toFixed(2) || '--'}
+                </Text>
+                <Text style={styles.metricLabel}>Std Dev</Text>
+              </View>
+              <View style={styles.metricCard}>
+                <Ionicons name="pulse" size={32} color="#9e9c93" />
+                <Text style={styles.metricValue}>
+                  {predictionData?.cleaned.data_points || '--'}
+                </Text>
+                <Text style={styles.metricLabel}>Data Points</Text>
+              </View>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -1064,5 +1215,94 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#e0daca',
     fontWeight: '500',
+  },
+  mapCard: {
+    backgroundColor: '#46474a',
+    borderRadius: 12,
+    padding: 16,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  mapTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#e0daca',
+  },
+  locationCount: {
+    fontSize: 12,
+    color: '#9e9c93',
+    backgroundColor: '#3a3d42',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  mapContainer: {
+    height: 250,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  mapLegend: {
+    flexDirection: 'row',
+    gap: 16,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#3a3d42',
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mapLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  mapLegendText: {
+    fontSize: 12,
+    color: '#e0daca',
+  },
+  locationList: {
+    gap: 8,
+  },
+  locationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  locationDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#e0daca',
+    fontFamily: 'monospace',
+  },
+  liveLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#fb444a',
+    backgroundColor: 'rgba(251, 68, 74, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  moreLocations: {
+    fontSize: 12,
+    color: '#9e9c93',
+    textAlign: 'center',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });
