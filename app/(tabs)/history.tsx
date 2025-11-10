@@ -1,8 +1,9 @@
 import { useTheme } from '@/contexts/theme-context';
+import { createHistoryStyles } from '@/styles/history.styles';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 
@@ -219,80 +220,80 @@ export default function HistoryScreen() {
   const getLatestReading = () => readings[0] || null;
 
   const latestReading = getLatestReading();
-  const themedStyles = styles(colors);
+  const styles = createHistoryStyles(colors);
 
   return (
-    <SafeAreaView style={themedStyles.container} edges={['top']}>
-      <View style={themedStyles.header}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
           <Ionicons name="analytics" size={28} color={colors.text} />
-          <Text style={themedStyles.headerTitle}>History</Text>
+          <Text style={styles.headerTitle}>History</Text>
           <TouchableOpacity onPress={fetchHistory}>
             <Ionicons name="refresh" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
 
       {loading ? (
-        <View style={themedStyles.centerContent}>
+        <View style={styles.centerContent}>
           <ActivityIndicator size="large" color="#fb444a" />
-          <Text style={themedStyles.loadingText}>Loading history...</Text>
+          <Text style={styles.loadingText}>Loading history...</Text>
         </View>
       ) : error ? (
-        <View style={themedStyles.centerContent}>
+        <View style={styles.centerContent}>
           <Ionicons name="alert-circle-outline" size={64} color="#fb444a" />
-          <Text style={themedStyles.errorText}>{error}</Text>
-          <TouchableOpacity style={themedStyles.retryButton} onPress={fetchHistory}>
-            <Text style={themedStyles.retryButtonText}>Retry</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={fetchHistory}>
+            <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : readings.length === 0 ? (
-        <View style={themedStyles.centerContent}>
+        <View style={styles.centerContent}>
           <Ionicons name="document-outline" size={64} color={colors.textSecondary} />
-          <Text style={themedStyles.emptyText}>No history data available</Text>
+          <Text style={styles.emptyText}>No history data available</Text>
         </View>
       ) : (
-        <ScrollView style={themedStyles.scrollView} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           {/* Filter Buttons */}
-          <View style={themedStyles.filterContainer}>
+          <View style={styles.filterContainer}>
             <TouchableOpacity
-              style={[themedStyles.filterButton, selectedMetric === 'all' && themedStyles.filterButtonActive]}
+              style={[styles.filterButton, selectedMetric === 'all' && styles.filterButtonActive]}
               onPress={() => setSelectedMetric('all')}
             >
-              <Text style={[themedStyles.filterText, selectedMetric === 'all' && themedStyles.filterTextActive]}>
+              <Text style={[styles.filterText, selectedMetric === 'all' && styles.filterTextActive]}>
                 All Metrics
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[themedStyles.filterButton, selectedMetric === 'nutrients' && themedStyles.filterButtonActive]}
+              style={[styles.filterButton, selectedMetric === 'nutrients' && styles.filterButtonActive]}
               onPress={() => setSelectedMetric('nutrients')}
             >
-              <Text style={[themedStyles.filterText, selectedMetric === 'nutrients' && themedStyles.filterTextActive]}>
+              <Text style={[styles.filterText, selectedMetric === 'nutrients' && styles.filterTextActive]}>
                 Nutrients
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[themedStyles.filterButton, selectedMetric === 'environment' && themedStyles.filterButtonActive]}
+              style={[styles.filterButton, selectedMetric === 'environment' && styles.filterButtonActive]}
               onPress={() => setSelectedMetric('environment')}
             >
-              <Text style={[themedStyles.filterText, selectedMetric === 'environment' && themedStyles.filterTextActive]}>
+              <Text style={[styles.filterText, selectedMetric === 'environment' && styles.filterTextActive]}>
                 Environment
               </Text>
             </TouchableOpacity>
           </View>
 
           {/* Chart Info */}
-          <View style={themedStyles.chartInfo}>
-            <Text style={themedStyles.chartTitle}>Historical Trends</Text>
-            <Text style={themedStyles.chartSubtitle}>
+          <View style={styles.chartInfo}>
+            <Text style={styles.chartTitle}>Historical Trends</Text>
+            <Text style={styles.chartSubtitle}>
               {readings.length} readings • {readings[readings.length - 1] && new Date(readings[readings.length - 1].created_at).toLocaleDateString()} to {latestReading && new Date(latestReading.created_at).toLocaleDateString()}
             </Text>
           </View>
 
           {/* Chart - Scrollable */}
-          <View style={themedStyles.chartContainer}>
+          <View style={styles.chartContainer}>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={true}
-              style={themedStyles.chartScroll}
+              style={styles.chartScroll}
               contentContainerStyle={{ paddingRight: 20 }}
             >
               <Svg height={CHART_HEIGHT} width={CHART_WIDTH + CHART_PADDING_LEFT}>
@@ -426,18 +427,18 @@ export default function HistoryScreen() {
                   })()}
                 </Svg>
               </ScrollView>
-              <View style={themedStyles.zoomHint}>
+              <View style={styles.zoomHint}>
                 <Ionicons name="arrow-forward-outline" size={12} color={colors.textSecondary} />
-                <Text style={themedStyles.zoomHintText}>Scroll horizontally to view all data</Text>
+                <Text style={styles.zoomHintText}>Scroll horizontally to view all data</Text>
               </View>
             </View>
 
           {/* Legend */}
-          <View style={themedStyles.legend}>
+          <View style={styles.legend}>
             {getVisibleMetrics().map(metric => (
-              <View key={metric.key} style={themedStyles.legendItem}>
-                <View style={[themedStyles.legendDot, { backgroundColor: metric.color }]} />
-                <Text style={themedStyles.legendLabel}>
+              <View key={metric.key} style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: metric.color }]} />
+                <Text style={styles.legendLabel}>
                   {metric.label} {metric.unit && `(${metric.unit})`}
                 </Text>
               </View>
@@ -446,65 +447,65 @@ export default function HistoryScreen() {
 
           {/* Latest Reading Summary */}
           {latestReading && (
-            <View style={themedStyles.summaryContainer}>
-              <Text style={themedStyles.summaryTitle}>Latest Reading</Text>
-              <Text style={themedStyles.summaryTime}>
+            <View style={styles.summaryContainer}>
+              <Text style={styles.summaryTitle}>Latest Reading</Text>
+              <Text style={styles.summaryTime}>
                 {new Date(latestReading.created_at).toLocaleString()}
               </Text>
               
-              <View style={themedStyles.summaryGrid}>
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>Nitrogen</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#32cd32' }]}>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Nitrogen</Text>
+                  <Text style={[styles.summaryValue, { color: '#32cd32' }]}>
                     {latestReading.nitrogen}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>mg/kg</Text>
+                  <Text style={styles.summaryUnit}>mg/kg</Text>
                 </View>
                 
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>Phosphorus</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#ff69b4' }]}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Phosphorus</Text>
+                  <Text style={[styles.summaryValue, { color: '#ff69b4' }]}>
                     {latestReading.phosphorus}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>mg/kg</Text>
+                  <Text style={styles.summaryUnit}>mg/kg</Text>
                 </View>
                 
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>Potassium</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#9370db' }]}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Potassium</Text>
+                  <Text style={[styles.summaryValue, { color: '#9370db' }]}>
                     {latestReading.potassium}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>mg/kg</Text>
+                  <Text style={styles.summaryUnit}>mg/kg</Text>
                 </View>
                 
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>pH</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#ff6347' }]}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>pH</Text>
+                  <Text style={[styles.summaryValue, { color: '#ff6347' }]}>
                     {latestReading.ph.toFixed(1)}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>pH</Text>
+                  <Text style={styles.summaryUnit}>pH</Text>
                 </View>
                 
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>Temperature</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#ffa500' }]}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Temperature</Text>
+                  <Text style={[styles.summaryValue, { color: '#ffa500' }]}>
                     {latestReading.temperature.toFixed(1)}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>°C</Text>
+                  <Text style={styles.summaryUnit}>°C</Text>
                 </View>
                 
-                <View style={themedStyles.summaryCard}>
-                  <Text style={themedStyles.summaryLabel}>Moisture</Text>
-                  <Text style={[themedStyles.summaryValue, { color: '#1e90ff' }]}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryLabel}>Moisture</Text>
+                  <Text style={[styles.summaryValue, { color: '#1e90ff' }]}>
                     {latestReading.moisture}
                   </Text>
-                  <Text style={themedStyles.summaryUnit}>%</Text>
+                  <Text style={styles.summaryUnit}>%</Text>
                 </View>
               </View>
 
-              <View style={themedStyles.sourceInfo}>
+              <View style={styles.sourceInfo}>
                 <Ionicons name="cube-outline" size={14} color={colors.textSecondary} />
-                <Text style={themedStyles.sourceText}>
+                <Text style={styles.sourceText}>
                   Device: {latestReading.device_name} • ID: {latestReading.id}
                 </Text>
               </View>
@@ -515,203 +516,3 @@ export default function HistoryScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = (colors: any) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    flex: 1,
-    textAlign: 'center',
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    gap: 16,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#fb444a',
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    marginTop: 16,
-  },
-  retryButton: {
-    backgroundColor: '#fb444a',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-  },
-  retryButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 8,
-  },
-  filterButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-  },
-  filterButtonActive: {
-    backgroundColor: '#fb444a',
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  filterTextActive: {
-    color: '#fff',
-  },
-  chartInfo: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  chartSubtitle: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  chartContainer: {
-    backgroundColor: colors.card,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 16,
-    borderRadius: 12,
-  },
-  chartScroll: {
-    maxHeight: CHART_HEIGHT + 20,
-  },
-  zoomHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 8,
-    paddingVertical: 4,
-  },
-  zoomHintText: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendLabel: {
-    fontSize: 12,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  summaryContainer: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-    padding: 16,
-    backgroundColor: colors.card,
-    borderRadius: 12,
-  },
-  summaryTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  summaryTime: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 16,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
-  summaryCard: {
-    flex: 1,
-    minWidth: '30%',
-    backgroundColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  summaryUnit: {
-    fontSize: 10,
-    color: colors.textSecondary,
-  },
-  sourceInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  sourceText: {
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-});

@@ -1,5 +1,6 @@
 import { useAuth } from '@/contexts/auth-context';
 import { useTheme } from '@/contexts/theme-context';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
@@ -23,6 +24,24 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email, password);
+      
+      // Check if user completed onboarding
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+      
+      if (userId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed')
+          .eq('id', userId)
+          .single();
+        
+        if (!profile?.onboarding_completed) {
+          router.replace('/(auth)/onboarding');
+          return;
+        }
+      }
+      
       router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'Invalid email or password');

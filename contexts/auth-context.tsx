@@ -4,6 +4,8 @@ import { createContext, ReactNode, useContext, useEffect, useState } from 'react
 interface User {
   uid: string;
   email: string | null;
+  user_name?: string | null;
+  language?: string | null;
 }
 
 interface AuthContextType {
@@ -20,22 +22,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const loadUserProfile = async (userId: string, email: string | null) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('user_name, language')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        console.error('Error loading user profile:', error);
+        return { uid: userId, email, user_name: null, language: null };
+      }
+
+      return {
+        uid: userId,
+        email,
+        user_name: profile?.user_name || null,
+        language: profile?.language || null,
+      };
+    } catch (err) {
+      console.error('Exception loading profile:', err);
+      return { uid: userId, email, user_name: null, language: null };
+    }
+  };
+
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ? {
-        uid: session.user.id,
-        email: session.user.email ?? null,
-      } : null);
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const userData = await loadUserProfile(session.user.id, session.user.email ?? null);
+        setUser(userData);
+      } else {
+        setUser(null);
+      }
       setIsLoading(false);
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ? {
-        uid: session.user.id,
-        email: session.user.email ?? null,
-      } : null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const userData = await loadUserProfile(session.user.id, session.user.email ?? null);
+        setUser(userData);
+      } else {
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();

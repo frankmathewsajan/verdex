@@ -1,10 +1,11 @@
 import { useAuth } from '@/contexts/auth-context';
 import { useTheme } from '@/contexts/theme-context';
+import { createSettingsStyles } from '@/styles/settings.styles';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SettingsScreen() {
@@ -182,11 +183,13 @@ export default function SettingsScreen() {
     );
   };
 
+  const styles = createSettingsStyles(colors);
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
         <Ionicons name="settings" size={28} color={colors.text} />
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <Text style={styles.headerTitle}>Settings</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -196,7 +199,7 @@ export default function SettingsScreen() {
         ) : (
           <>
             {/* User Info */}
-            <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.section}>
               <View style={styles.userInfo}>
                 <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
                   <Text style={[styles.avatarText, { color: theme === 'dark' ? colors.text : '#2C2C2C' }]}>
@@ -204,17 +207,17 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 <View style={styles.userDetails}>
-                  <Text style={[styles.userName, { color: colors.text }]}>{userName || 'User Account'}</Text>
-                  <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{user?.email || 'Not logged in'}</Text>
+                  <Text style={styles.userName}>{userName || 'User Account'}</Text>
+                  <Text style={styles.userEmail}>{user?.email || 'Not logged in'}</Text>
                 </View>
               </View>
             </View>
 
             {/* Username */}
-            <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Display Name</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Display Name</Text>
               <TextInput
-                style={[styles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                style={styles.input}
                 value={userName}
                 onChangeText={setUserName}
                 placeholder="Enter your name"
@@ -223,13 +226,13 @@ export default function SettingsScreen() {
             </View>
 
             {/* Language */}
-            <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Language</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Language</Text>
               <TouchableOpacity 
                 style={[styles.languageOption, language === 'english' && { backgroundColor: colors.primary + '20', borderColor: colors.primary }]}
                 onPress={() => setLanguage('english')}
               >
-                <Text style={[styles.languageText, { color: colors.text }]}>English</Text>
+                <Text style={styles.languageText}>English</Text>
                 {language === 'english' && <Ionicons name="checkmark-circle" size={24} color={colors.primary} />}
               </TouchableOpacity>
               <TouchableOpacity 
@@ -265,12 +268,12 @@ export default function SettingsScreen() {
         )}
 
         {/* Theme Toggle */}
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.section}>
           <View style={styles.settingRow}>
             <View style={styles.settingLeft}>
               <Ionicons name={theme === 'dark' ? 'moon' : 'sunny'} size={24} color={colors.primary} />
               <View style={styles.settingInfo}>
-                <Text style={[styles.settingLabel, { color: colors.text }]}>Theme</Text>
+                <Text style={styles.settingLabel}>Theme</Text>
                 <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
                   {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}
                 </Text>
@@ -298,78 +301,3 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
-  content: { flex: 1, padding: 16 },
-  section: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-  },
-  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 24, fontWeight: 'bold' },
-  userDetails: { flex: 1 },
-  userName: { fontSize: 18, fontWeight: 'bold', marginBottom: 4 },
-  userEmail: { fontSize: 14 },
-  settingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  settingLeft: { flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1 },
-  settingInfo: { flex: 1 },
-  settingLabel: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
-  settingDesc: { fontSize: 13 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
-  input: {
-    height: 48,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 15,
-    borderWidth: 1,
-  },
-  languageOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  languageText: { fontSize: 15, fontWeight: '500' },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-  },
-  saveText: { fontSize: 16, fontWeight: 'bold', color: '#ffffff' },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  logoutText: { fontSize: 16, fontWeight: 'bold', color: '#ffffff' },
-});

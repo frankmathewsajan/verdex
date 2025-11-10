@@ -1,12 +1,18 @@
 import { useBluetooth } from '@/contexts/bluetooth-context';
 import { useTheme } from '@/contexts/theme-context';
+import { createDeviceStyles } from '@/styles/device.styles';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as IntentLauncher from 'expo-intent-launcher';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, PermissionsAndroid, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, PermissionsAndroid, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import RNBluetoothClassic, { BluetoothDevice } from 'react-native-bluetooth-classic';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Circle, Path, Svg } from 'react-native-svg';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CHART_WIDTH = SCREEN_WIDTH - 80;
+const MAX_LIVE_DATA_POINTS = 300;
 
 interface ScannedDevice {
   id: string;
@@ -34,6 +40,14 @@ interface SensorReading extends SensorData {
   timestamp: Date;
   deviceId: string;
   deviceName: string;
+}
+
+interface LiveDataPoint {
+  timestamp: number;
+  nitrogen: number | null;
+  phosphorus: number | null;
+  potassium: number | null;
+  pH: number | null;
 }
 
 export default function DeviceScreen() {
@@ -65,6 +79,7 @@ export default function DeviceScreen() {
   const [isScanning, setIsScanning] = useState(false);
   const [batchCompleted, setBatchCompleted] = useState(false); // Track if batch was sent
   const scrollViewRef = useRef<ScrollView>(null);
+  const [liveData, setLiveData] = useState<LiveDataPoint[]>([]);
 
   useEffect(() => {
     checkBluetoothPermissions();
@@ -80,6 +95,34 @@ export default function DeviceScreen() {
     if (latestSensorData && isConnected) {
       // Update local sensor data display
       setSensorData(latestSensorData);
+      
+      // Add to live chart data
+      const newPoint: LiveDataPoint = {
+        timestamp: Date.now(),
+        nitrogen: latestSensorData.nitrogen,
+        phosphorus: latestSensorData.phosphorus,
+        potassium: latestSensorData.potassium,
+        pH: latestSensorData.pH,
+      };
+
+      setLiveData(prevData => {
+        // Check if data has changed from last point
+        const lastPoint = prevData[prevData.length - 1];
+        if (lastPoint && 
+            lastPoint.nitrogen === newPoint.nitrogen &&
+            lastPoint.phosphorus === newPoint.phosphorus &&
+            lastPoint.potassium === newPoint.potassium &&
+            lastPoint.pH === newPoint.pH) {
+          return prevData; // No change, don't add duplicate
+        }
+
+        // Add new point and keep only last MAX_LIVE_DATA_POINTS
+        const updated = [...prevData, newPoint];
+        if (updated.length > MAX_LIVE_DATA_POINTS) {
+          return updated.slice(updated.length - MAX_LIVE_DATA_POINTS);
+        }
+        return updated;
+      });
       
       // Only add to batch if data is valid (real GPS coordinates)
       if (isDataValid) {
@@ -417,6 +460,49 @@ export default function DeviceScreen() {
     setSerialData('');
   };
 
+  // Chart generation functions
+  const generateLiveChartPath = (data: (number | null)[], width: number, height: number) => {
+    if (!data || data.length === 0) return { path: '', values: [], points: [], min: 0, max: 0 };
+    
+    const validData = data.filter(v => v !== null) as number[];
+    if (validData.length === 0) return { path: '', values: [], points: [], min: 0, max: 0 };
+    
+    const smoothedData = smoothData(validData, 3); // 3-point moving average
+    
+    const min = Math.min(...smoothedData);
+    const max = Math.max(...smoothedData);
+    const range = max - min || 1;
+    const xStep = width / (smoothedData.length - 1 || 1);
+    
+    const points = smoothedData.map((value, index) => {
+      const x = index * xStep;
+      const y = height - ((value - min) / range) * height;
+      return { x, y, value };
+    });
+    
+    const path = points.length > 0 ? `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}` : '';
+    
+    return { path, values: smoothedData, points, min, max };
+  };
+
+  // Smoothing function to reduce fluctuations
+  const smoothData = (data: number[], windowSize: number = 3): number[] => {
+    if (data.length < windowSize) return data;
+    
+    const smoothed: number[] = [];
+    const halfWindow = Math.floor(windowSize / 2);
+    
+    for (let i = 0; i < data.length; i++) {
+      const start = Math.max(0, i - halfWindow);
+      const end = Math.min(data.length, i + halfWindow + 1);
+      const window = data.slice(start, end);
+      const avg = window.reduce((sum, val) => sum + val, 0) / window.length;
+      smoothed.push(avg);
+    }
+    
+    return smoothed;
+  };
+
   // Check if sensor data has changed (ignoring null values)
   const hasDataChanged = (newData: SensorData, oldData: SensorData | null): boolean => {
     if (!oldData) return true;
@@ -530,29 +616,29 @@ export default function DeviceScreen() {
     
     return (
       <TouchableOpacity 
-        style={[themedStyles.deviceCard, isTarget && themedStyles.deviceCardESP]}
+        style={[styles.deviceCard, isTarget && styles.deviceCardESP]}
         onPress={() => connectToDevice(item.id)}
       >
-        <View style={themedStyles.deviceIcon}>
+        <View style={styles.deviceIcon}>
           <Ionicons 
             name="bluetooth" 
             size={28} 
             color={isTarget ? "#0bda95" : "#fb444a"} 
           />
         </View>
-        <View style={themedStyles.deviceInfo}>
-          <View style={themedStyles.deviceNameRow}>
-            <Text style={themedStyles.deviceName}>{item.name || 'Unknown Device'}</Text>
+        <View style={styles.deviceInfo}>
+          <View style={styles.deviceNameRow}>
+            <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
             {isTarget && (
-              <View style={themedStyles.espBadge}>
+              <View style={styles.espBadge}>
                 <Ionicons name="flash" size={12} color="#0bda95" />
-                <Text style={themedStyles.espBadgeText}>SENSOR</Text>
+                <Text style={styles.espBadgeText}>SENSOR</Text>
               </View>
             )}
           </View>
-          <Text style={themedStyles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
+          <Text style={styles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
           {item.rssi && (
-            <Text style={themedStyles.deviceRssi}>Signal: {item.rssi} dBm</Text>
+            <Text style={styles.deviceRssi}>Signal: {item.rssi} dBm</Text>
           )}
         </View>
         <Ionicons name="chevron-forward" size={20} color="colors.textSecondary" />
@@ -564,42 +650,42 @@ export default function DeviceScreen() {
     <>
       {/* Connected Device */}
       {connectedDevice && (
-        <View style={themedStyles.connectedSection}>
-          <Text style={themedStyles.sectionTitle}>Connected Device</Text>
-          <View style={themedStyles.connectedCard}>
-            <View style={themedStyles.connectedInfo}>
+        <View style={styles.connectedSection}>
+          <Text style={styles.sectionTitle}>Connected Device</Text>
+          <View style={styles.connectedCard}>
+            <View style={styles.connectedInfo}>
               <Ionicons name="checkmark-circle" size={24} color="#0bda95" />
-              <Text style={themedStyles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
+              <Text style={styles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
             </View>
             
             {/* Data Validity Indicator */}
-            <View style={[themedStyles.validityIndicator, isDataValid ? themedStyles.validityIndicatorValid : themedStyles.validityIndicatorInvalid]}>
+            <View style={[styles.validityIndicator, isDataValid ? styles.validityIndicatorValid : styles.validityIndicatorInvalid]}>
               <Ionicons 
                 name={isDataValid ? "checkmark-circle" : "alert-circle"} 
                 size={14} 
                 color={isDataValid ? "#0bda95" : "#ffa500"} 
               />
-              <Text style={themedStyles.validityText}>
+              <Text style={styles.validityText}>
                 {isDataValid ? 'Valid GPS Data' : 'Waiting for GPS Lock'}
               </Text>
             </View>
             
             {/* Batch Status Indicator */}
-            <View style={themedStyles.batchStatusContainer}>
-              <View style={themedStyles.batchStatus}>
+            <View style={styles.batchStatusContainer}>
+              <View style={styles.batchStatus}>
                 <Ionicons name="cloud-upload-outline" size={16} color="colors.textSecondary" />
-                <Text style={themedStyles.batchStatusText}>
+                <Text style={styles.batchStatusText}>
                   Batch: {batchCompleted ? 'Completed ✓' : `${sensorBatch.length}/30 readings`}
                 </Text>
               </View>
               {!batchCompleted && sensorBatch.length > 0 && (
-                <View style={themedStyles.batchProgress}>
-                  <View style={[themedStyles.batchProgressFill, { width: `${(sensorBatch.length / 30) * 100}%` }]} />
+                <View style={styles.batchProgress}>
+                  <View style={[styles.batchProgressFill, { width: `${(sensorBatch.length / 30) * 100}%` }]} />
                 </View>
               )}
               {batchCompleted && (
                 <TouchableOpacity 
-                  style={themedStyles.restartBatchButton} 
+                  style={styles.restartBatchButton} 
                   onPress={() => {
                     setBatchCompleted(false);
                     setSensorBatch([]);
@@ -607,13 +693,13 @@ export default function DeviceScreen() {
                   }}
                 >
                   <Ionicons name="refresh" size={14} color="#0bda95" />
-                  <Text style={themedStyles.restartBatchText}>Restart</Text>
+                  <Text style={styles.restartBatchText}>Restart</Text>
                 </TouchableOpacity>
               )}
             </View>
             
-            <TouchableOpacity style={themedStyles.disconnectButton} onPress={disconnectDevice}>
-              <Text style={themedStyles.disconnectButtonText}>Disconnect</Text>
+            <TouchableOpacity style={styles.disconnectButton} onPress={disconnectDevice}>
+              <Text style={styles.disconnectButtonText}>Disconnect</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -621,15 +707,15 @@ export default function DeviceScreen() {
 
       {/* Scan Controls - Only show when NOT connected */}
       {!connectedDevice && (
-        <View style={themedStyles.scanSection}>
-          <Text style={themedStyles.sectionTitle}>Scan for Sensor Devices</Text>
+        <View style={styles.scanSection}>
+          <Text style={styles.sectionTitle}>Scan for Sensor Devices</Text>
           
           {/* Bluetooth State Indicator with Toggle */}
-          <View style={themedStyles.stateIndicator}>
+          <View style={styles.stateIndicator}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <View style={[
-                themedStyles.stateIcon,
-                bluetoothState === 'PoweredOn' ? themedStyles.stateIconOn : themedStyles.stateIconOff
+                styles.stateIcon,
+                bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
               ]}>
                 <Ionicons 
                   name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
@@ -637,34 +723,34 @@ export default function DeviceScreen() {
                   color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
                 />
               </View>
-              <Text style={themedStyles.stateText}>
+              <Text style={styles.stateText}>
                 Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
               </Text>
             </View>
             {bluetoothState === 'PoweredOff' && (
               <TouchableOpacity 
-                style={themedStyles.toggleBluetoothButton} 
+                style={styles.toggleBluetoothButton} 
                 onPress={toggleBluetooth}
               >
                 <Ionicons name="settings-outline" size={16} color="#fb444a" />
-                <Text style={themedStyles.toggleBluetoothText}>Enable</Text>
+                <Text style={styles.toggleBluetoothText}>Enable</Text>
               </TouchableOpacity>
             )}
           </View>
           
           {/* ESP Devices Section */}
-          <View style={themedStyles.pairedDevicesHeader}>
-            <View style={themedStyles.scanningIndicator}>
+          <View style={styles.pairedDevicesHeader}>
+            <View style={styles.scanningIndicator}>
               {isScanning && <ActivityIndicator size="small" color="#0bda95" />}
-              <Text style={themedStyles.sectionTitle}>Bluetooth Devices</Text>
+              <Text style={styles.sectionTitle}>Bluetooth Devices</Text>
             </View>
           </View>
 
-          <View style={themedStyles.scanButtonGroup}>
+          <View style={styles.scanButtonGroup}>
             <TouchableOpacity 
               style={[
-                themedStyles.refreshButton,
-                isScanning && themedStyles.refreshButtonActive
+                styles.refreshButton,
+                isScanning && styles.refreshButtonActive
               ]}
               onPress={isScanning ? stopScanning : startScanning}
               disabled={bluetoothState !== 'PoweredOn' || !hasPermissions}
@@ -674,14 +760,14 @@ export default function DeviceScreen() {
                 size={20} 
                 color="#fff" 
               />
-              <Text style={themedStyles.refreshButtonText}>
+              <Text style={styles.refreshButtonText}>
                 {isScanning ? 'Stop' : 'Scan'}
               </Text>
             </TouchableOpacity>
             
             {devices.length > 0 && devices.some(d => !isTargetDevice(d.name)) && (
               <TouchableOpacity 
-                style={themedStyles.toggleFilterButton}
+                style={styles.toggleFilterButton}
                 onPress={() => setShowAllDevices(!showAllDevices)}
               >
                 <Ionicons 
@@ -689,7 +775,7 @@ export default function DeviceScreen() {
                   size={16} 
                   color="colors.text" 
                 />
-                <Text style={themedStyles.toggleFilterText}>
+                <Text style={styles.toggleFilterText}>
                   {showAllDevices ? 'Hide' : 'Show All'}
                 </Text>
               </TouchableOpacity>
@@ -697,14 +783,14 @@ export default function DeviceScreen() {
           </View>
           
           {!hasPermissions && (
-            <Text style={themedStyles.permissionWarning}>
+            <Text style={styles.permissionWarning}>
               ⚠️ Bluetooth permissions not granted
             </Text>
           )}
           
           {devices.length > 0 && (
-            <View style={themedStyles.deviceListCount}>
-              <Text style={themedStyles.deviceCountText}>
+            <View style={styles.deviceListCount}>
+              <Text style={styles.deviceCountText}>
                 {showAllDevices ? `All Devices (${devices.length})` : `Sensor Devices (${devices.filter(d => isTargetDevice(d.name)).length})`}
               </Text>
             </View>
@@ -718,12 +804,12 @@ export default function DeviceScreen() {
     if (connectedDevice) return null;
     
     return (
-      <View style={themedStyles.emptyState}>
+      <View style={styles.emptyState}>
         <Ionicons name="radio-outline" size={64} color="colors.textSecondary" />
-        <Text style={themedStyles.emptyText}>
+        <Text style={styles.emptyText}>
           {isScanning ? 'Searching for devices...' : 'No devices found'}
         </Text>
-        <Text style={themedStyles.emptySubtext}>
+        <Text style={styles.emptySubtext}>
           {isScanning 
             ? 'Make sure your ESP device is powered on'
             : 'Tap "Scan" to search for nearby Bluetooth devices'}
@@ -732,13 +818,13 @@ export default function DeviceScreen() {
     );
   };
 
-  const themedStyles = styles(colors);
+  const styles = createDeviceStyles(colors);
 
   return (
-    <SafeAreaView style={themedStyles.container} edges={['top']}>
-      <View style={themedStyles.header}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
         <Ionicons name="radio" size={28} color={colors.text} />
-        <Text style={themedStyles.headerTitle}>Devices</Text>
+        <Text style={styles.headerTitle}>Devices</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -749,697 +835,271 @@ export default function DeviceScreen() {
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={renderEmptyComponent}
-          contentContainerStyle={themedStyles.content}
+          contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         />
       ) : (
-        <ScrollView style={themedStyles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {renderHeader()}
 
           {/* Live Sensor Data - Only show when connected */}
-          <View style={themedStyles.sensorDataSection}>
+          <View style={styles.sensorDataSection}>
             {/* Sensor Cards Grid */}
-            <View style={themedStyles.sensorGrid}>
+            <View style={styles.sensorGrid}>
               {/* Latitude */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="navigate" size={24} color="#fb444a" />
-                <Text style={themedStyles.sensorLabel}>Latitude</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Latitude</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.latitude !== null ? `${sensorData.latitude}°` : '--'}
                 </Text>
               </View>
 
               {/* Longitude */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="navigate-outline" size={24} color="#4a9eff" />
-                <Text style={themedStyles.sensorLabel}>Longitude</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Longitude</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.longitude !== null ? `${sensorData.longitude}°` : '--'}
                 </Text>
               </View>
 
               {/* Satellite Count */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="globe" size={24} color="#0bda95" />
-                <Text style={themedStyles.sensorLabel}>Satellites</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Satellites</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.satelliteCount !== null ? `${sensorData.satelliteCount}` : '--'}
                 </Text>
               </View>
 
               {/* Bearing */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="compass" size={24} color="#ffa500" />
-                <Text style={themedStyles.sensorLabel}>Bearing</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Bearing</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.bearing !== null ? `${sensorData.bearing}°` : '--'}
                 </Text>
               </View>
 
               {/* Nitrogen */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="leaf" size={24} color="#32cd32" />
-                <Text style={themedStyles.sensorLabel}>Nitrogen (N)</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Nitrogen (N)</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.nitrogen !== null ? `${sensorData.nitrogen}` : '--'}
                 </Text>
               </View>
 
               {/* Phosphorus */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="leaf-outline" size={24} color="#ff69b4" />
-                <Text style={themedStyles.sensorLabel}>Phosphorus (P)</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Phosphorus (P)</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.phosphorus !== null ? `${sensorData.phosphorus}` : '--'}
                 </Text>
               </View>
 
               {/* Potassium */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="fitness" size={24} color="#9370db" />
-                <Text style={themedStyles.sensorLabel}>Potassium (K)</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Potassium (K)</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.potassium !== null ? `${sensorData.potassium}` : '--'}
                 </Text>
               </View>
 
               {/* pH */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="flask" size={24} color="#ff6347" />
-                <Text style={themedStyles.sensorLabel}>pH Level</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>pH Level</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.pH !== null ? `${sensorData.pH}` : '--'}
                 </Text>
               </View>
 
               {/* Moisture */}
-              <View style={themedStyles.sensorCard}>
+              <View style={styles.sensorCard}>
                 <Ionicons name="water" size={24} color="#4a9eff" />
-                <Text style={themedStyles.sensorLabel}>Moisture</Text>
-                <Text style={themedStyles.sensorValue}>
+                <Text style={styles.sensorLabel}>Moisture</Text>
+                <Text style={styles.sensorValue}>
                   {sensorData.moisture !== null ? `${sensorData.moisture}%` : '--'}
                 </Text>
               </View>
             </View>
           </View>
+
+          {/* NPK pH Values Card */}
+          <View style={styles.npkSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>NPK & pH Analysis</Text>
+              {isConnected && (
+                <View style={styles.liveIndicator}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>LIVE</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.npkGrid}>
+              <View style={styles.npkCard}>
+                <Text style={styles.npkLabel}>Nitrogen (N)</Text>
+                <Text style={[styles.npkValue, { color: '#32cd32' }]}>
+                  {sensorData.nitrogen !== null ? `${sensorData.nitrogen} ppm` : '--'}
+                </Text>
+              </View>
+              <View style={styles.npkCard}>
+                <Text style={styles.npkLabel}>Phosphorus (P)</Text>
+                <Text style={[styles.npkValue, { color: '#ff69b4' }]}>
+                  {sensorData.phosphorus !== null ? `${sensorData.phosphorus} ppm` : '--'}
+                </Text>
+              </View>
+              <View style={styles.npkCard}>
+                <Text style={styles.npkLabel}>Potassium (K)</Text>
+                <Text style={[styles.npkValue, { color: '#9370db' }]}>
+                  {sensorData.potassium !== null ? `${sensorData.potassium} ppm` : '--'}
+                </Text>
+              </View>
+              <View style={styles.npkCard}>
+                <Text style={styles.npkLabel}>pH Level</Text>
+                <Text style={[styles.npkValue, { color: '#ff6347' }]}>
+                  {sensorData.pH !== null ? sensorData.pH.toFixed(1) : '--'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Live Trend Graph - Only show when connected and has data */}
+          {isConnected && liveData.length > 1 && (
+            <View style={styles.trendSection}>
+              <View style={styles.trendHeader}>
+                <Ionicons name="analytics" size={24} color={colors.primary} />
+                <Text style={styles.trendTitle}>Real-Time Trends</Text>
+                <Text style={styles.dataCount}>
+                  {liveData.length}/{MAX_LIVE_DATA_POINTS} readings
+                </Text>
+              </View>
+
+              {/* Main Chart */}
+              <View style={styles.chartContainer}>
+                {/* Y-axis labels */}
+                <View style={styles.yAxisLabels}>
+                  <Text style={styles.axisLabel}>Max</Text>
+                  <Text style={styles.axisLabel}>Mid</Text>
+                  <Text style={styles.axisLabel}>Min</Text>
+                </View>
+                
+                <View style={{ flex: 1 }}>
+                  <Svg height={160} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 160`}>
+                    {/* Grid lines */}
+                    <Path d={`M 0 40 L ${CHART_WIDTH} 40`} stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+                    <Path d={`M 0 80 L ${CHART_WIDTH} 80`} stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+                    <Path d={`M 0 120 L ${CHART_WIDTH} 120`} stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+                    
+                    {/* Nitrogen Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.nitrogen), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#32cd32"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`n-${i}`} cx={point.x} cy={point.y} r="3" fill="#32cd32" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* Phosphorus Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.phosphorus), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#ff69b4"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`p-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff69b4" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* Potassium Line */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.potassium), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#9370db"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`k-${i}`} cx={point.x} cy={point.y} r="3" fill="#9370db" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                    
+                    {/* pH Line (scaled) */}
+                    {(() => {
+                      const chartData = generateLiveChartPath(liveData.map(d => d.pH ? d.pH * 10 : null), CHART_WIDTH, 160);
+                      return (
+                        <>
+                          <Path
+                            d={chartData.path}
+                            stroke="#ff6347"
+                            strokeWidth="2.5"
+                            fill="none"
+                            strokeLinecap="round"
+                          />
+                          {chartData.points.map((point, i) => (
+                            <Circle key={`ph-${i}`} cx={point.x} cy={point.y} r="3" fill="#ff6347" />
+                          ))}
+                        </>
+                      );
+                    })()}
+                  </Svg>
+                  
+                  {/* X-axis label */}
+                  <Text style={styles.xAxisLabel}>Time (most recent →)</Text>
+                </View>
+              </View>
+
+              {/* Legend */}
+              <View style={styles.legendContainer}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#32cd32' }]} />
+                  <Text style={styles.legendText}>N</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#ff69b4' }]} />
+                  <Text style={styles.legendText}>P</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#9370db' }]} />
+                  <Text style={styles.legendText}>K</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
+                  <Text style={styles.legendText}>pH (×10)</Text>
+                </View>
+              </View>
+            </View>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
   );
 }
-
-const styles = (colors: any) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    flex: 1,
-    textAlign: 'center',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-  },
-  connectedSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'colors.text',
-    marginBottom: 12,
-  },
-  connectedCard: {
-    backgroundColor: 'colors.card',
-    borderRadius: 8,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#0bda95',
-  },
-  connectedInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  connectedName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'colors.text',
-  },
-  validityIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  validityIndicatorValid: {
-    backgroundColor: 'rgba(11, 218, 149, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(11, 218, 149, 0.3)',
-  },
-  validityIndicatorInvalid: {
-    backgroundColor: 'rgba(255, 165, 0, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 165, 0, 0.3)',
-  },
-  validityText: {
-    fontSize: 12,
-    color: 'colors.text',
-    fontWeight: '500',
-  },
-  batchStatusContainer: {
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: 'colors.border',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'colors.border',
-  },
-  batchStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  batchStatusText: {
-    fontSize: 14,
-    color: 'colors.textSecondary',
-  },
-  batchProgress: {
-    height: 4,
-    backgroundColor: 'colors.border',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  batchProgressFill: {
-    height: '100%',
-    backgroundColor: '#0bda95',
-    borderRadius: 2,
-  },
-  restartBatchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'colors.card',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    marginTop: 8,
-  },
-  restartBatchText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0bda95',
-  },
-  disconnectButton: {
-    backgroundColor: '#fb444a',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  disconnectButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  scanSection: {
-    marginBottom: 24,
-  },
-  pairedDevicesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  scanningIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  scanButtonGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  refreshButton: {
-    flex: 1,
-    backgroundColor: '#0bda95',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  refreshButtonActive: {
-    backgroundColor: '#fb444a',
-  },
-  refreshButtonDisabled: {
-    backgroundColor: 'colors.card',
-    opacity: 0.5,
-  },
-  refreshButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  stateIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'colors.card',
-    borderRadius: 6,
-  },
-  stateIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stateIconOn: {
-    backgroundColor: 'rgba(11, 218, 149, 0.2)',
-  },
-  stateIconOff: {
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-  },
-  stateText: {
-    fontSize: 14,
-    color: 'colors.text',
-    fontWeight: '500',
-  },
-  permissionWarning: {
-    fontSize: 12,
-    color: '#fb444a',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  listSection: {
-    flex: 1,
-  },
-  listContent: {
-    gap: 12,
-  },
-  deviceCard: {
-    backgroundColor: 'colors.card',
-    borderRadius: 8,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  deviceCardESP: {
-    backgroundColor: '#3a4a3e',
-    borderLeftWidth: 3,
-    borderLeftColor: '#0bda95',
-  },
-  espBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(11, 218, 149, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 2,
-  },
-  espBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#0bda95',
-  },
-  deviceIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deviceInfo: {
-    flex: 1,
-  },
-  deviceName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'colors.text',
-    marginBottom: 4,
-  },
-  deviceId: {
-    fontSize: 12,
-    color: 'colors.textSecondary',
-    fontFamily: 'monospace',
-    marginBottom: 2,
-  },
-  deviceRssi: {
-    fontSize: 11,
-    color: 'colors.textSecondary',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'colors.text',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: 'colors.textSecondary',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  serialSection: {
-    marginTop: 16,
-    flex: 1,
-  },
-  serialHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'colors.card',
-    borderRadius: 8,
-  },
-  serialTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-    borderRadius: 4,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#fb444a',
-  },
-  liveText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#fb444a',
-    letterSpacing: 0.5,
-  },
-  serialControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  clearButton: {
-    padding: 8,
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-    borderRadius: 6,
-  },
-  clearButtonText: {
-    fontSize: 12,
-    color: 'colors.textSecondary',
-    fontWeight: '500',
-  },
-  terminalContainer: {
-    backgroundColor: '#1a1a1c',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'colors.card',
-    overflow: 'hidden',
-  },
-  terminalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#2a2a2c',
-    borderBottomWidth: 1,
-    borderBottomColor: 'colors.card',
-  },
-  terminalButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  terminalButton: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  terminalTitle: {
-    fontSize: 11,
-    color: 'colors.textSecondary',
-    fontFamily: 'monospace',
-  },
-  serialOutput: {
-    backgroundColor: '#1a1a1c',
-    padding: 12,
-    maxHeight: 300,
-    minHeight: 150,
-  },
-  serialText: {
-    fontSize: 12,
-    color: '#0bda95',
-    fontFamily: 'monospace',
-    lineHeight: 18,
-  },
-  serialPlaceholder: {
-    fontSize: 12,
-    color: 'colors.textSecondary',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    paddingVertical: 40,
-  },
-  serialHint: {
-    fontSize: 10,
-    color: 'colors.textSecondary',
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 20,
-    lineHeight: 14,
-  },
-  terminalFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#2a2a2c',
-    borderTopWidth: 1,
-    borderTopColor: 'colors.card',
-  },
-  terminalFooterText: {
-    fontSize: 10,
-    color: 'colors.textSecondary',
-    fontFamily: 'monospace',
-  },
-  terminalBaudRate: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  toggleBluetoothButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(251, 68, 74, 0.2)',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#fb444a',
-  },
-  toggleBluetoothText: {
-    fontSize: 12,
-    color: '#fb444a',
-    fontWeight: '600',
-  },
-  deviceListHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  toggleFilterButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: 'colors.card',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'colors.border',
-  },
-  toggleFilterText: {
-    fontSize: 13,
-    color: 'colors.text',
-    fontWeight: '600',
-  },
-  deviceListCount: {
-    marginBottom: 12,
-  },
-  deviceCountText: {
-    fontSize: 14,
-    color: 'colors.textSecondary',
-    fontWeight: '500',
-  },
-  deviceListActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  verifyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#fb444a',
-    borderRadius: 6,
-  },
-  verifyButtonText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'colors.card',
-    borderRadius: 6,
-  },
-  filterButtonText: {
-    fontSize: 12,
-    color: 'colors.textSecondary',
-    fontWeight: '500',
-  },
-  filterButtonTextActive: {
-    color: '#0bda95',
-  },
-  deviceCardVerified: {
-    borderWidth: 2,
-    borderColor: '#0bda95',
-    backgroundColor: 'rgba(11, 218, 149, 0.05)',
-  },
-  deviceNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    backgroundColor: 'rgba(11, 218, 149, 0.2)',
-    borderRadius: 4,
-  },
-  verifiedText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: '#0bda95',
-  },
-  unverifiedBadge: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
-  verifyingText: {
-    fontSize: 11,
-    color: '#fb444a',
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  sensorDataSection: {
-    flex: 1,
-  },
-  sensorDataHeader: {
-    backgroundColor: 'colors.card',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  liveIndicatorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  sensorDataTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: 'colors.text',
-  },
-  deviceNameText: {
-    fontSize: 14,
-    color: 'colors.textSecondary',
-  },
-  sensorGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  sensorCard: {
-    width: '48%',
-    backgroundColor: 'colors.card',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    gap: 8,
-  },
-  sensorLabel: {
-    fontSize: 12,
-    color: 'colors.textSecondary',
-    textAlign: 'center',
-  },
-  sensorValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'colors.text',
-  },
-});
-
-
-

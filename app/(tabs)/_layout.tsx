@@ -27,38 +27,59 @@ export default function TabLayout() {
         },
       }}>
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="present"
+        options={{
+          title: 'Present',
+          tabBarIcon: ({ color, size }) => <Ionicons name="radio" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
           title: 'History',
-          tabBarIcon: ({ color, size }) => <Ionicons name="time" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="analytics" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Map',
+          tabBarIcon: ({ color, size }) => <Ionicons name="map" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="recommendation"
+        options={{
+          title: 'Recommend',
+          tabBarIcon: ({ color, size }) => <Ionicons name="leaf" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="device"
         options={{
+          href: null,
           title: 'Device',
-          tabBarIcon: ({ color, size }) => <Ionicons name="radio" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="help"
         options={{
+          href: null,
           title: 'Help',
-          tabBarIcon: ({ color, size }) => <Ionicons name="help-circle" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
+          href: null,
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
         }}
       />
     </Tabs>
