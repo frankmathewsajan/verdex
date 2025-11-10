@@ -1,11 +1,12 @@
-﻿import { useBluetooth } from '@/contexts/bluetooth-context';
+﻿import { CROP_PROFILES, getCropProfileById, getParameterHealth } from '@/constants/crop-profiles';
+import { useBluetooth } from '@/contexts/bluetooth-context';
 import { useTheme } from '@/contexts/theme-context';
 import { createPresentStyles } from '@/styles/present.styles';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path, Text as SvgText } from 'react-native-svg';
 
@@ -36,8 +37,11 @@ export default function PresentScreen() {
   const [dbReading, setDbReading] = useState<SensorReading | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCropId, setSelectedCropId] = useState('general');
+  const [showCropSelector, setShowCropSelector] = useState(false);
 
   const styles = createPresentStyles(colors);
+  const cropProfile = getCropProfileById(selectedCropId);
 
   // Fetch latest reading from Supabase
   useEffect(() => {
@@ -111,27 +115,15 @@ export default function PresentScreen() {
     }
   }, [isConnected, isDataValid]);
 
-  const getHealthPercentage = (value: number | null, optimal: { min: number; max: number }, min: number, max: number): number => {
-    if (value === null) return 0;
-    if (value >= optimal.min && value <= optimal.max) return 100;
-    if (value < optimal.min) {
-      const range = optimal.min - min;
-      const distance = optimal.min - value;
-      return Math.max(0, Math.round(100 - (distance / range) * 100));
+  // Get parameter health based on crop-specific ranges
+  const getParameterHealthForCrop = (
+    value: number | null,
+    parameterName: 'nitrogen' | 'phosphorus' | 'potassium' | 'ph' | 'moisture' | 'temperature'
+  ) => {
+    if (value === null) {
+      return { zone: 'red' as const, fillPercentage: 0, color: '#dc2626' };
     }
-    const range = max - optimal.max;
-    const distance = value - optimal.max;
-    return Math.max(0, Math.round(100 - (distance / range) * 100));
-  };
-
-  // Battery colors matching the image: Red -> Orange -> Yellow -> Light Green -> Green
-  const getHealthColor = (percentage: number): string => {
-    if (percentage >= 90) return '#22c55e'; // Full green (rightmost battery)
-    if (percentage >= 75) return '#4ade80'; // Bright green
-    if (percentage >= 60) return '#84cc16'; // Yellow-green
-    if (percentage >= 45) return '#eab308'; // Yellow (middle battery)
-    if (percentage >= 25) return '#f97316'; // Orange (2nd battery)
-    return '#dc2626'; // Red (leftmost battery - critical)
+    return getParameterHealth(value, parameterName, cropProfile);
   };
 
   // Use Bluetooth data if available and valid, otherwise use database data
@@ -147,21 +139,22 @@ export default function PresentScreen() {
   };
 
   const parameters: ParameterData[] = [
-    { name: 'Nitrogen (N)', value: currentData?.nitrogen ?? null, unit: '%', min: 0, max: 10, optimal: { min: 1.5, max: 3.5 }, icon: 'flask' },
-    { name: 'Phosphorus (P)', value: currentData?.phosphorus ?? null, unit: '%', min: 0, max: 5, optimal: { min: 0.5, max: 1.5 }, icon: 'flask-outline' },
-    { name: 'Potassium (K)', value: currentData?.potassium ?? null, unit: '%', min: 0, max: 10, optimal: { min: 1.0, max: 3.0 }, icon: 'flask' },
-    { name: 'pH Level', value: getPhValue(), unit: 'pH', min: 0, max: 14, optimal: { min: 6.0, max: 7.5 }, icon: 'water' },
-    { name: 'Moisture', value: currentData?.moisture ?? null, unit: '%', min: 0, max: 100, optimal: { min: 40, max: 60 }, icon: 'water-outline' },
-    { name: 'Temperature', value: currentData?.temperature ?? null, unit: '°C', min: -10, max: 50, optimal: { min: 20, max: 30 }, icon: 'thermometer' },
+    { name: 'Nitrogen (N)', value: currentData?.nitrogen ?? null, unit: 'mg/kg', min: 0, max: 700, optimal: cropProfile.ranges.nitrogen.green, icon: 'flask' },
+    { name: 'Phosphorus (P)', value: currentData?.phosphorus ?? null, unit: 'mg/kg', min: 0, max: 150, optimal: cropProfile.ranges.phosphorus.green, icon: 'flask-outline' },
+    { name: 'Potassium (K)', value: currentData?.potassium ?? null, unit: 'mg/kg', min: 0, max: 600, optimal: cropProfile.ranges.potassium.green, icon: 'flask' },
+    { name: 'pH Level', value: getPhValue(), unit: 'pH', min: 0, max: 14, optimal: cropProfile.ranges.ph.green, icon: 'water' },
+    { name: 'Moisture', value: currentData?.moisture ?? null, unit: '%', min: 0, max: 100, optimal: cropProfile.ranges.moisture.green, icon: 'water-outline' },
+    { name: 'Temperature', value: currentData?.temperature ?? null, unit: '°C', min: -10, max: 50, optimal: cropProfile.ranges.temperature.green, icon: 'thermometer' },
   ];
 
   const validParameters = parameters.filter(p => p.value !== null);
   const totalValue = validParameters.reduce((sum, p) => sum + (p.value || 0), 0);
   
-  const pieData = validParameters.map((param) => {
+  const pieData = validParameters.map((param, index) => {
     const percentage = totalValue > 0 ? ((param.value || 0) / totalValue) * 100 : 0;
-    const healthPercentage = getHealthPercentage(param.value, param.optimal, param.min, param.max);
-    return { name: param.name, value: param.value, percentage, color: getHealthColor(healthPercentage) };
+    const paramKey = ['nitrogen', 'phosphorus', 'potassium', 'ph', 'moisture', 'temperature'][index] as 'nitrogen' | 'phosphorus' | 'potassium' | 'ph' | 'moisture' | 'temperature';
+    const health = getParameterHealthForCrop(param.value, paramKey);
+    return { name: param.name, value: param.value, percentage, color: health.color };
   });
 
   const radius = 80;
@@ -191,6 +184,55 @@ export default function PresentScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Crop Selector Modal */}
+      <Modal
+        visible={showCropSelector}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCropSelector(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowCropSelector(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <Text style={styles.modalTitle}>Select Target Crop</Text>
+            <Text style={styles.modalSubtitle}>
+              Battery health indicators will adjust based on your crop's optimal ranges
+            </Text>
+            <ScrollView style={styles.cropList}>
+              {CROP_PROFILES.map((crop) => (
+                <TouchableOpacity
+                  key={crop.id}
+                  style={[
+                    styles.cropOption,
+                    { borderColor: colors.border },
+                    selectedCropId === crop.id && { backgroundColor: colors.primary + '15', borderColor: colors.primary },
+                  ]}
+                  onPress={() => {
+                    setSelectedCropId(crop.id);
+                    setShowCropSelector(false);
+                  }}
+                >
+                  <Text style={styles.cropEmoji}>{crop.emoji}</Text>
+                  <Text style={styles.cropNameText}>{crop.name}</Text>
+                  {selectedCropId === crop.id && (
+                    <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: colors.textSecondary }]}
+              onPress={() => setShowCropSelector(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Header similar to home page */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -222,22 +264,45 @@ export default function PresentScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      
+      {/* Crop Target Selector */}
+      {hasData && (
+        <TouchableOpacity
+          style={[styles.cropSelector, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setShowCropSelector(true)}
+        >
+          <View style={styles.cropSelectorLeft}>
+            <Text style={styles.cropSelectorEmoji}>{cropProfile.emoji}</Text>
+            <View>
+              <Text style={styles.cropSelectorLabel}>Target Crop</Text>
+              <Text style={styles.cropSelectorValue}>{cropProfile.name}</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+      )}
       {hasData ? (
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
             <View style={styles.parametersGrid}>
               {parameters.map((param, index) => {
-                const healthPercentage = getHealthPercentage(param.value, param.optimal, param.min, param.max);
-                const healthColor = getHealthColor(healthPercentage);
+                const paramKey = ['nitrogen', 'phosphorus', 'potassium', 'ph', 'moisture', 'temperature'][index] as 'nitrogen' | 'phosphorus' | 'potassium' | 'ph' | 'moisture' | 'temperature';
+                const health = getParameterHealthForCrop(param.value, paramKey);
                 return (
                   <View key={index} style={styles.parameterCard}>
                     <Text style={styles.parameterName}>{param.name}</Text>
                     <View style={styles.batteryContainer}>
                       <View style={styles.batteryTip} />
-                      <View style={[styles.batteryFill, { width: `${healthPercentage}%`, backgroundColor: healthColor }]} />
+                      <View style={[styles.batteryFill, { width: `${health.fillPercentage}%`, backgroundColor: health.color }]} />
                     </View>
                     <Text style={styles.parameterValue}>{param.value !== null ? param.value.toFixed(1) : '--'}</Text>
                     <Text style={styles.parameterUnit}>{param.unit}</Text>
+                    <View style={styles.statusBadge}>
+                      <View style={[styles.statusDot, { backgroundColor: health.color }]} />
+                      <Text style={[styles.statusText, { color: health.color }]}>
+                        {health.zone === 'green' ? 'Optimal' : health.zone === 'yellow' ? 'Marginal' : 'Poor'}
+                      </Text>
+                    </View>
                   </View>
                 );
               })}

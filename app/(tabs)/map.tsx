@@ -4,8 +4,9 @@ import { useTheme } from '@/contexts/theme-context';
 import { createMapStyles } from '@/styles/map.styles';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface MapLocation {
@@ -23,7 +24,46 @@ export default function MapScreen() {
   const [mapLocations, setMapLocations] = useState<MapLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [centerLocation, setCenterLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationPermission, setLocationPermission] = useState<boolean>(false);
   const styles = createMapStyles(colors);
+
+  // Request location permissions and get current location
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Location Permission',
+          'Please enable location permissions to see your current location on the map.',
+          [{ text: 'OK' }]
+        );
+        setLocationPermission(false);
+        return;
+      }
+
+      setLocationPermission(true);
+
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const userLocation = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+
+      setCurrentUserLocation(userLocation);
+      
+      // Set center to user's current location if no other location is set
+      if (!centerLocation) {
+        setCenterLocation(userLocation);
+      }
+    } catch (error) {
+      console.error('Error getting current location:', error);
+    }
+  };
 
   // Format time from ISO string
   const formatTime = (isoString: string): string => {
@@ -125,6 +165,11 @@ export default function MapScreen() {
     }
   };
 
+  // Get current location on mount
+  useEffect(() => {
+    getCurrentLocation();
+  }, []);
+
   // Fetch map locations on mount and when connection changes
   useEffect(() => {
     fetchMapLocations();
@@ -177,14 +222,66 @@ export default function MapScreen() {
             </View>
           </View>
         ) : (
-          <View style={styles.emptyState}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="map-outline" size={80} color={colors.textSecondary} />
-            </View>
-            <Text style={styles.emptyTitle}>No Data Today</Text>
-            <Text style={styles.emptyDescription}>
-              {loading ? 'Loading today\'s data...' : 'No sensor readings collected today. Connect your device and start taking readings to see them on the map.'}
-            </Text>
+          <View style={styles.section}>
+            {/* Show map even with no data if we have user's location */}
+            {currentUserLocation && locationPermission ? (
+              <View style={styles.mapCard}>
+                <View style={styles.mapHeader}>
+                  <Ionicons name="location" size={24} color={colors.primary} />
+                  <Text style={styles.mapTitle}>Your Location</Text>
+                  <Text style={styles.locationCount}>No readings yet</Text>
+                </View>
+
+                {/* Google Map with user's current location */}
+                <View style={styles.mapContainer}>
+                  <GoogleMap 
+                    locations={[{
+                      latitude: currentUserLocation.latitude,
+                      longitude: currentUserLocation.longitude,
+                      isLive: true,
+                      timestamp: new Date().toISOString(),
+                      time: 'Current',
+                    }]} 
+                    height={400} 
+                  />
+                </View>
+
+                {/* Map Legend */}
+                <View style={styles.mapLegend}>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.mapLegendDot, { backgroundColor: '#fb444a' }]} />
+                    <Text style={styles.mapLegendText}>Your Current Location</Text>
+                  </View>
+                </View>
+
+                {/* Info Section */}
+                <View style={styles.infoSection}>
+                  <Ionicons name="information-circle-outline" size={20} color={colors.textSecondary} />
+                  <Text style={styles.infoText}>
+                    No sensor readings collected today. Connect your device and start taking readings to see them on the map.
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyState}>
+                <View style={styles.iconContainer}>
+                  <Ionicons name="map-outline" size={80} color={colors.textSecondary} />
+                </View>
+                <Text style={styles.emptyTitle}>No Data Today</Text>
+                <Text style={styles.emptyDescription}>
+                  {loading ? 'Loading today\'s data...' : locationPermission ? 'Getting your location...' : 'Enable location permissions to see the map. No sensor readings collected today.'}
+                </Text>
+                {!locationPermission && (
+                  <TouchableOpacity 
+                    style={[styles.retryButton, { backgroundColor: colors.primary }]}
+                    onPress={getCurrentLocation}
+                  >
+                    <Ionicons name="location" size={20} color="#fff" />
+                    <Text style={styles.retryButtonText}>Enable Location</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
           </View>
         )}
       </ScrollView>

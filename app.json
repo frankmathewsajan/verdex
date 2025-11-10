@@ -47,6 +47,12 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Verdex to use your location to show where soil readings were taken."
+        }
       ]
     ],
     "experiments": {

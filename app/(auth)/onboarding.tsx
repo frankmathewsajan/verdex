@@ -36,7 +36,7 @@ export default function OnboardingScreen() {
 
       if (error) throw error;
       
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home' as any);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to save profile');
     } finally {

@@ -126,4 +126,18 @@ export const createMapStyles = (colors: any) => StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
 });

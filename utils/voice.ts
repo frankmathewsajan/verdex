@@ -118,36 +118,45 @@ const generatePrescriptionText = (
 export const speakPrescription = async (options: SpeakOptions): Promise<void> => {
   const { language, data, recommendations, rate = 0.9 } = options;
   
-  try {
-    // Stop any ongoing speech first
-    await Speech.stop();
-    
-    // Generate text in the specified language
-    const text = generatePrescriptionText(language, data, recommendations);
-    
-    if (!text) {
-      throw new Error('Failed to generate prescription text');
+  return new Promise((resolve, reject) => {
+    try {
+      // Stop any ongoing speech first
+      Speech.stop();
+      
+      // Generate text in the specified language
+      const text = generatePrescriptionText(language, data, recommendations);
+      
+      if (!text) {
+        reject(new Error('Failed to generate prescription text'));
+        return;
+      }
+      
+      // Get language code
+      const languageCode = LANGUAGE_CODES[language];
+      
+      // Speak the text
+      Speech.speak(text, {
+        language: languageCode,
+        pitch: 1.0,
+        rate: rate,
+        onDone: () => {
+          console.log('✅ Speech completed');
+          resolve();
+        },
+        onError: (error) => {
+          console.error('❌ Speech error:', error);
+          reject(error);
+        },
+        onStopped: () => {
+          console.log('🛑 Speech stopped');
+          resolve();
+        },
+      });
+    } catch (error) {
+      console.error('❌ Error speaking prescription:', error);
+      reject(error);
     }
-    
-    // Get language code
-    const languageCode = LANGUAGE_CODES[language];
-    
-    // Speak the text
-    Speech.speak(text, {
-      language: languageCode,
-      pitch: 1.0,
-      rate: rate,
-      onDone: () => {
-        console.log('✅ Speech completed');
-      },
-      onError: (error) => {
-        console.error('❌ Speech error:', error);
-      },
-    });
-  } catch (error) {
-    console.error('❌ Error speaking prescription:', error);
-    throw error;
-  }
+  });
 };
 
 /**

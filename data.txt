@@ -1,0 +1,110 @@
+standard optimal soil ranges for your target crops. I've organized them into the "Crop Profile" database structure we discussed, with "red," "yellow," and "green" levels for your app's logic.
+
+A "general" profile is included as a default before the user selects a specific crop.
+
+---
+
+### **Soil Nutrient Profiles for App Logic**
+
+Here is a breakdown of the optimal, marginal (yellow), and poor (red) ranges for each crop.
+
+**Note on N-P-K:** The values for Nitrogen (N), Phosphorus (P), and Potassium (K) are complex as they are measured in many ways (ppm, mg/kg, or lbs/acre). For your app's "battery" logic, the simplest way is to use a qualitative ranking (Low, Medium, High). The recommendations below are based on general soil test interpretations.
+
+---
+
+### 1. 🌾 Paddy (Rice)
+
+Paddy is unique because it grows in flooded, anaerobic (low-oxygen) soil, which changes the chemistry. It can tolerate a wider pH range.
+
+* **pH:**
+    * **Green (Optimal):** 5.5 – 7.0
+    * **Yellow (Marginal):** 5.0 - 5.4 or 7.1 - 7.5
+    * **Red (Poor):** < 5.0 or > 7.5
+* **Nitrogen (N):** **High** importance. Needed for leaf and tiller growth.
+* **Phosphorus (P):** **Medium** importance. Crucial for root development and early plant energy.
+* **Potassium (K):** **High** importance. Needed for stem strength and grain filling.
+
+---
+
+### 2. ☁️ Cotton
+
+Cotton is sensitive to highly acidic soil, which can lock up nutrients.
+
+* **pH:**
+    * **Green (Optimal):** 6.0 – 7.5
+    * **Yellow (Marginal):** 5.5 - 5.9 or 7.6 - 8.0
+    * **Red (Poor):** < 5.5 or > 8.0
+* **Nitrogen (N):** **High** importance. Drives vegetative growth and boll production.
+* **Phosphorus (P):** **Medium** importance. Essential for root growth and energy.
+* **Potassium (K):** **Very High** importance. Critical for water regulation and fiber quality. Cotton is often called a "potash-hungry" crop.
+
+---
+
+### 3. 🍅 Tomato
+
+Tomatoes prefer slightly acidic soil to make all nutrients available.
+
+* **pH:**
+    * **Green (Optimal):** 6.0 – 6.8
+    * **Yellow (Marginal):** 5.5 - 5.9 or 6.9 - 7.2
+    * **Red (Poor):** < 5.5 or > 7.2
+* **Nitrogen (N):** **High** importance. Good for initial growth, but *too much* N (a "red" high) will create all leaves and no fruit.
+* **Phosphorus (P):** **High** importance. Critical for flower and fruit development.
+* **Potassium (K):** **High** importance. Key for fruit quality, size, and disease resistance.
+
+---
+
+### 4. 🌶️ Chili
+
+Chilis are very similar to tomatoes in their needs.
+
+* **pH:**
+    * **Green (Optimal):** 6.0 – 7.0
+    * **Yellow (Marginal):** 5.5 - 5.9 or 7.1 - 7.5
+    * **Red (Poor):** < 5.5 or > 7.5
+* **Nitrogen (N):** **High** importance. Like tomatoes, a good balance is needed, not too much.
+* **Phosphorus (P):** **Medium** importance. For roots and flowers.
+* **Potassium (K):** **High** importance. For fruit development and plant health.
+
+---
+
+### 5. 🌽 Maize (Corn)
+
+Maize is a heavy "feeder," meaning it uses a lot of nutrients, especially Nitrogen.
+
+* **pH:**
+    * **Green (Optimal):** 6.0 – 7.2
+    * **Yellow (Marginal):** 5.5 - 5.9 or 7.3 - 7.8
+    * **Red (Poor):** < 5.5 or > 7.8
+* **Nitrogen (N):** **Very High** importance. This is the #1 nutrient for maize, driving yield.
+* **Phosphorus (P):** **High** importance. Critical for early root and stalk development.
+* **Potassium (K):** **High** importance. Essential for strong stalks (to prevent falling over) and water use.
+
+---
+
+### 6. 🫘 Pulses (Lentils, Chickpeas)
+
+Pulses are special. They are "nitrogen-fixers," meaning they create their own Nitrogen.
+
+* **pH:**
+    * **Green (Optimal):** 5.5 – 7.2 (Very wide range)
+    * **Yellow (Marginal):** 5.0 - 5.4 or 7.3 - 8.0
+    * **Red (Poor):** < 5.0 or > 8.0
+* **Nitrogen (N):** **Low** importance. You only need a *small* amount of N at the start. Too much N (a "red" high) will stop the plant from fixing its own, wasting money.
+* **Phosphorus (P):** **High** importance. This is the key nutrient for pulses. It fuels the nitrogen-fixation process in the root nodules.
+* **Potassium (K):** **Medium** importance. Needed for overall plant health and water regulation.
+
+---
+
+### **Summary Table for App Development**
+
+| Crop | Optimal pH ("Green") | N Importance | P Importance | K Importance |
+| :--- | :--- | :--- | :--- | :--- |
+| **Paddy** | 5.5 – 7.0 | High | Medium | High |
+| **Cotton** | 6.0 – 7.5 | High | Medium | **Very High** |
+| **Tomato** | 6.0 – 6.8 | High | High | High |
+| **Chili** | 6.0 – 7.0 | High | Medium | High |
+| **Maize** | 6.0 – 7.2 | **Very High** | High | High |
+| **Pulses** | 5.5 – 7.2 | **Low** (Needs P) | **High** | Medium |
+
+You can use this table as the "brain" for your "Present" screen's battery icons. When a user selects "Paddy," your app will know that a pH of 6.5 is "green" and that K is a "high" priority.

@@ -42,7 +42,7 @@ export default function LoginScreen() {
         }
       }
       
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home' as any);
     } catch (error: any) {
       Alert.alert('Login Failed', error.message || 'Invalid email or password');
     } finally {
@@ -56,7 +56,7 @@ export default function LoginScreen() {
         <View style={styles.content}>
           <View style={styles.form}>
             {/* Header */}
-            <Text style={[styles.title, { color: colors.text }]}>SOIL.OS v1.0</Text>
+            <Text style={[styles.title, { color: colors.text }]}>VERDEX v1.0</Text>
             <Text style={[styles.subtitle, { color: colors.text }]}>Access Your Soil Data</Text>
 
             {/* Email Input */}
