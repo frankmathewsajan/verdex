@@ -99,9 +99,8 @@ export const createHistoryStyles = (colors: any) => StyleSheet.create({
   },
   chartContainer: {
     backgroundColor: colors.card,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     borderRadius: 12,
   },
   chartScroll: {
@@ -199,5 +198,39 @@ export const createHistoryStyles = (colors: any) => StyleSheet.create({
   sourceText: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    gap: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: 16,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
   },
 });

@@ -1,14 +1,27 @@
 import { useAuth } from '@/contexts/auth-context';
 import { useTheme } from '@/contexts/theme-context';
 import { createHomeStyles } from '@/styles/home.styles';
+import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+interface QuickStats {
+  totalReadings: number;
+  uniqueLocations: number;
+  lastSync: string;
+}
 
 export default function HomeScreen() {
   const { user } = useAuth();
   const { colors, theme } = useTheme();
+  const [stats, setStats] = useState<QuickStats>({
+    totalReadings: 0,
+    uniqueLocations: 0,
+    lastSync: '--',
+  });
 
   const menuItems = [
     {
@@ -51,6 +64,75 @@ export default function HomeScreen() {
 
   const styles = createHomeStyles(colors, theme);
 
+  // Fetch statistics from database
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) return;
+
+        const userId = (authUser as any)?.uid || (authUser as any)?.id;
+
+        // Get total readings count
+        const { count: readingsCount } = await supabase
+          .from('sensor_readings')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId);
+
+        // Get unique locations count
+        const { data: locationsData } = await supabase
+          .from('sensor_readings')
+          .select('latitude, longitude')
+          .eq('user_id', userId)
+          .not('latitude', 'is', null)
+          .not('longitude', 'is', null);
+
+        // Count unique locations (round to 4 decimal places)
+        const uniqueLocations = locationsData 
+          ? new Set(
+              locationsData.map(loc => 
+                `${loc.latitude?.toFixed(4)},${loc.longitude?.toFixed(4)}`
+              )
+            ).size
+          : 0;
+
+        // Get last sync time
+        const { data: lastReading } = await supabase
+          .from('sensor_readings')
+          .select('created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        const formatLastSync = (isoString: string) => {
+          const date = new Date(isoString);
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffMins = Math.floor(diffMs / 60000);
+          const diffHours = Math.floor(diffMs / 3600000);
+          const diffDays = Math.floor(diffMs / 86400000);
+
+          if (diffMins < 1) return 'Just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHours < 24) return `${diffHours}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+
+        setStats({
+          totalReadings: readingsCount || 0,
+          uniqueLocations: uniqueLocations,
+          lastSync: lastReading ? formatLastSync(lastReading.created_at) : '--',
+        });
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      }
+    };
+
+    fetchStats();
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Compact Header */}
@@ -90,17 +172,17 @@ export default function HomeScreen() {
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
               <Ionicons name="cloud-upload-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.statValue}>--</Text>
+              <Text style={styles.statValue}>{stats.totalReadings}</Text>
               <Text style={styles.statLabel}>Readings</Text>
             </View>
             <View style={styles.statCard}>
               <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.statValue}>--</Text>
+              <Text style={styles.statValue}>{stats.uniqueLocations}</Text>
               <Text style={styles.statLabel}>Locations</Text>
             </View>
             <View style={styles.statCard}>
               <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.statValue}>--</Text>
+              <Text style={styles.statValue}>{stats.lastSync}</Text>
               <Text style={styles.statLabel}>Last Sync</Text>
             </View>
           </View>

@@ -7,6 +7,9 @@ interface Location {
   latitude: number;
   longitude: number;
   isLive: boolean;
+  timestamp?: string;
+  time?: string;
+  id?: string;
 }
 
 interface GoogleMapProps {
@@ -187,10 +190,14 @@ const GoogleMap: React.FC<GoogleMapProps> = ({ locations, height = 300 }) => {
               fullscreenControl: false, // Hide fullscreen button
             });
 
+            // Create info window for time display
+            const infoWindow = new google.maps.InfoWindow();
+
             // Add markers
             ${uniqueLocations.map((loc, index) => {
               const color = loc.isLive ? '#fb444a' : '#0bda95';
               const title = loc.isLive ? 'Live Reading' : `Reading ${index + 1}`;
+              const time = loc.time || 'Unknown';
               return `
               const marker${index} = document.createElement('div');
               marker${index}.style.width = '20px';
@@ -199,12 +206,26 @@ const GoogleMap: React.FC<GoogleMapProps> = ({ locations, height = 300 }) => {
               marker${index}.style.border = '3px solid white';
               marker${index}.style.borderRadius = '50%';
               marker${index}.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+              marker${index}.style.cursor = 'pointer';
               
-              new AdvancedMarkerElement({
+              const markerElement${index} = new AdvancedMarkerElement({
                 map: map,
                 position: { lat: ${loc.latitude}, lng: ${loc.longitude} },
                 content: marker${index},
                 title: "${title}"
+              });
+              
+              // Add click listener to show time
+              markerElement${index}.addListener('click', () => {
+                infoWindow.close();
+                infoWindow.setContent(\`
+                  <div style="padding: 8px; font-family: Arial, sans-serif;">
+                    <strong style="color: ${color};">${title}</strong>
+                    <br/>
+                    <span style="color: #666; font-size: 14px;">⏰ ${time}</span>
+                  </div>
+                \`);
+                infoWindow.open(map, markerElement${index});
               });
               `;
             }).join('\n')}

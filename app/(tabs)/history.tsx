@@ -1,518 +1,637 @@
+import { useAuth } from '@/contexts/auth-context';
 import { useTheme } from '@/contexts/theme-context';
+import { createCalendarStyles } from '@/styles/history-calendar.styles';
 import { createHistoryStyles } from '@/styles/history.styles';
+import { generateHistoryReport, shareReport } from '@/utils/report-generator';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const MIN_POINT_SPACING = 3; // Minimum pixels between data points (~0.2cm - very compact for trend visibility)
-const CHART_HEIGHT = 320;
-const CHART_PADDING_LEFT = 40;
+const CHART_HEIGHT = 220;
+const CHART_PADDING_TOP = 20;
+const CHART_PADDING_BOTTOM = 30;
+const CHART_PADDING_LEFT = 35;
+const CHART_PADDING_RIGHT = 15;
+const MIN_POINT_SPACING = 50; // Minimum space between data points
 
 interface SensorReading {
-  id: number;
+  id: string;
   created_at: string;
-  latitude: number;
-  longitude: number;
-  satellite_count: number;
-  bearing: number;
+  latitude?: number;
+  longitude?: number;
+  nitrogen: number;
+  phosphorus: number;
+  potassium: number;
+  ph: number;
+  pH?: number;
+  moisture: number;
+  temperature: number;
+  user_id: string;
+}
+
+interface DailyAverage {
+  date: string;
   nitrogen: number;
   phosphorus: number;
   potassium: number;
   ph: number;
   moisture: number;
   temperature: number;
-  humidity: number | null;
-  soil_conductivity: number;
-  device_id: string;
-  device_name: string;
-  user_id: string;
+  count: number;
 }
+
+interface DateReading {
+  time: string;
+  location: string;
+  data: SensorReading;
+}
+
+const metrics = [
+  { key: 'nitrogen', label: 'Nitrogen', unit: 'mg/kg', color: '#32cd32' },
+  { key: 'phosphorus', label: 'Phosphorus', unit: 'mg/kg', color: '#ff69b4' },
+  { key: 'potassium', label: 'Potassium', unit: 'mg/kg', color: '#9370db' },
+  { key: 'ph', label: 'pH', unit: '', color: '#ff6347' },
+  { key: 'moisture', label: 'Moisture', unit: '%', color: '#1e90ff' },
+  { key: 'temperature', label: 'Temperature', unit: '°C', color: '#ffa500' },
+];
 
 export default function HistoryScreen() {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [dailyAverages, setDailyAverages] = useState<DailyAverage[]>([]);
+  const [datesWithData, setDatesWithData] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [dateReadings, setDateReadings] = useState<DateReading[]>([]);
+  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedMetric, setSelectedMetric] = useState<'all' | 'nutrients' | 'environment'>('all');
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [selectedMetric, setSelectedMetric] = useState<keyof DailyAverage>('nitrogen');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Calculate dynamic chart width based on number of readings
-  const getChartWidth = () => {
-    const baseWidth = Math.max(
-      SCREEN_WIDTH - 80,
-      readings.length * MIN_POINT_SPACING
-    );
-    // Cap maximum width to prevent canvas memory issues
-    const MAX_WIDTH = 10000; // Maximum 10000px to prevent crashes
-    return Math.min(baseWidth, MAX_WIDTH);
-  };
+  const styles = createHistoryStyles(colors);
+  const calendarStyles = createCalendarStyles(colors);
 
-  const CHART_WIDTH = getChartWidth();
+  const calculateDailyAverages = (data: SensorReading[]): DailyAverage[] => {
+    const dailyMap = new Map<string, SensorReading[]>();
 
-  const metrics = [
-    { key: 'nitrogen', label: 'Nitrogen', color: '#32cd32', unit: 'mg/kg', minRange: 0, maxRange: 50 },
-    { key: 'phosphorus', label: 'Phosphorus', color: '#ff69b4', unit: 'mg/kg', minRange: 0, maxRange: 50 },
-    { key: 'potassium', label: 'Potassium', color: '#9370db', unit: 'mg/kg', minRange: 0, maxRange: 100 },
-    { key: 'ph', label: 'pH', color: '#ff6347', unit: '', scale: 10, minRange: 50, maxRange: 140 }, // pH 5-14 scaled by 10
-    { key: 'temperature', label: 'Temperature', color: '#ffa500', unit: '°C', minRange: 15, maxRange: 40 },
-    { key: 'moisture', label: 'Moisture', color: '#1e90ff', unit: '%', minRange: 0, maxRange: 100 },
-  ];
-
-  const getVisibleMetrics = () => {
-    if (selectedMetric === 'nutrients') {
-      return metrics.filter(m => ['nitrogen', 'phosphorus', 'potassium', 'ph'].includes(m.key));
-    }
-    if (selectedMetric === 'environment') {
-      return metrics.filter(m => ['temperature', 'moisture'].includes(m.key));
-    }
-    return metrics;
-  };
-
-  // Optimize data by aggregating and removing near-duplicates
-  const optimizeChartData = (values: number[]) => {
-    if (values.length <= 30) return values; // No need to optimize if already small
-    
-    const BUCKET_SIZE = 15; // Group every 15 readings (captures changes, removes redundant continuous IoT data)
-    const SIMILARITY_THRESHOLD = 0.1; // Values within 0.1 are considered similar
-    const MAX_REPEATS = 2; // Skip if same value repeats more than twice
-    
-    // Step 1: Aggregate into buckets (calculate mean)
-    const aggregated: number[] = [];
-    for (let i = 0; i < values.length; i += BUCKET_SIZE) {
-      const bucket = values.slice(i, i + BUCKET_SIZE);
-      const mean = bucket.reduce((sum, val) => sum + val, 0) / bucket.length;
-      aggregated.push(mean);
-    }
-    
-    // Step 2: Remove near-duplicates that repeat too often
-    const optimized: number[] = [aggregated[0]]; // Always keep first point
-    let repeatCount = 1;
-    let lastValue = aggregated[0];
-    
-    for (let i = 1; i < aggregated.length; i++) {
-      const currentValue = aggregated[i];
-      const diff = Math.abs(currentValue - lastValue);
-      
-      if (diff < SIMILARITY_THRESHOLD) {
-        repeatCount++;
-        // Only keep if not exceeded max repeats
-        if (repeatCount <= MAX_REPEATS) {
-          optimized.push(currentValue);
-        }
-      } else {
-        // Value changed significantly, reset counter
-        repeatCount = 1;
-        optimized.push(currentValue);
-        lastValue = currentValue;
-      }
-    }
-    
-    // Always keep last point
-    if (aggregated.length > 0 && optimized[optimized.length - 1] !== aggregated[aggregated.length - 1]) {
-      optimized.push(aggregated[aggregated.length - 1]);
-    }
-    
-    console.log(`Data optimization: ${values.length} → ${aggregated.length} (aggregated) → ${optimized.length} (final)`);
-    return optimized;
-  };
-
-  const generateChartPath = (dataKey: keyof SensorReading, metricScale: number = 1, chartWidth: number, minRange?: number, maxRange?: number) => {
-    if (readings.length === 0) return { path: '', minValue: 0, maxValue: 0, values: [], indices: [] };
-
-    const rawValues = readings.map(r => {
-      const val = r[dataKey];
-      return typeof val === 'number' ? val * metricScale : 0;
-    }).reverse(); // Reverse to show oldest to newest
-
-    // Optimize data for better performance
-    const values = optimizeChartData(rawValues);
-
-    // Use fixed ranges if provided, otherwise calculate from data
-    let minValue: number;
-    let maxValue: number;
-    
-    if (minRange !== undefined && maxRange !== undefined) {
-      minValue = minRange;
-      maxValue = maxRange;
-    } else {
-      const dataMax = Math.max(...values);
-      const dataMin = Math.min(...values);
-      const padding = (dataMax - dataMin) * 0.1 || 1;
-      maxValue = dataMax + padding;
-      minValue = Math.max(0, dataMin - padding);
-    }
-    
-    const range = maxValue - minValue || 1;
-    const xStep = chartWidth / Math.max(values.length - 1, 1);
-    const yScale = (CHART_HEIGHT - 60) / range;
-
-    // Sample points for circles to avoid rendering thousands of circles
-    const MAX_VISIBLE_POINTS = 200; // Maximum circles to render
-    const samplingRate = Math.max(1, Math.ceil(values.length / MAX_VISIBLE_POINTS));
-    const sampledIndices: number[] = [];
-    
-    for (let i = 0; i < values.length; i += samplingRate) {
-      sampledIndices.push(i);
-    }
-    // Always include last point
-    if (sampledIndices[sampledIndices.length - 1] !== values.length - 1) {
-      sampledIndices.push(values.length - 1);
-    }
-
-    let path = '';
-    values.forEach((value, index) => {
-      const x = CHART_PADDING_LEFT + (index * xStep);
-      const y = CHART_HEIGHT - 40 - ((Math.max(minValue, Math.min(maxValue, value)) - minValue) * yScale);
-      
-      if (index === 0) {
-        path += `M ${x} ${y}`;
-      } else {
-        path += ` L ${x} ${y}`;
-      }
+    data.forEach(reading => {
+      const date = new Date(reading.created_at).toISOString().split('T')[0];
+      if (!dailyMap.has(date)) dailyMap.set(date, []);
+      dailyMap.get(date)!.push(reading);
     });
 
-    return { path, minValue, maxValue, values, indices: sampledIndices };
+    const averages: DailyAverage[] = [];
+    dailyMap.forEach((readings, date) => {
+      const sum = (key: keyof SensorReading) => 
+        readings.reduce((s, r) => s + (Number(r[key] || (key === 'ph' ? r.pH : 0)) || 0), 0);
+      
+      averages.push({
+        date,
+        nitrogen: sum('nitrogen') / readings.length,
+        phosphorus: sum('phosphorus') / readings.length,
+        potassium: sum('potassium') / readings.length,
+        ph: sum('ph') / readings.length,
+        moisture: sum('moisture') / readings.length,
+        temperature: sum('temperature') / readings.length,
+        count: readings.length,
+      });
+    });
+
+    return averages.sort((a, b) => a.date.localeCompare(b.date));
   };
 
   const fetchHistory = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+    if (!user) return;
+    setLoading(true);
+    
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setError('Please log in to view history');
-        setLoading(false);
-        return;
-      }
+    const { data, error } = await supabase
+      .from('sensor_readings')
+      .select('*')
+      .eq('user_id', user.uid)
+      .gte('created_at', thirtyDaysAgo.toISOString())
+      .order('created_at', { ascending: true });
 
-      // Fetch from sensor_readings table (new structure)
-      const { data, error: fetchError } = await supabase
-        .from('sensor_readings')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(300);
-
-      if (fetchError) {
-        console.error('Supabase error:', fetchError);
-        throw new Error(fetchError.message);
-      }
-
+    if (error) {
+      Alert.alert('Error', 'Failed to fetch history');
+    } else {
       setReadings(data || []);
-    } catch (err) {
-      console.error('Error fetching history:', err);
-      setError('Failed to load history');
-    } finally {
-      setLoading(false);
+      const averages = calculateDailyAverages(data || []);
+      setDailyAverages(averages);
+      setDatesWithData(new Set(averages.map(avg => avg.date)));
     }
+    setLoading(false);
   };
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [user]);
 
-  const getLatestReading = () => readings[0] || null;
+  const generateCalendar = (monthDate: Date) => {
+    const startDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const endDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+    
+    const calendar: (string | null)[][] = [];
+    let week: (string | null)[] = [];
 
-  const latestReading = getLatestReading();
-  const styles = createHistoryStyles(colors);
+    const firstDay = startDate.getDay();
+    for (let i = 0; i < firstDay; i++) week.push(null);
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-          <Ionicons name="analytics" size={28} color={colors.text} />
-          <Text style={styles.headerTitle}>History</Text>
-          <TouchableOpacity onPress={fetchHistory}>
-            <Ionicons name="refresh" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+    const current = new Date(startDate);
+    while (current <= endDate) {
+      week.push(current.toISOString().split('T')[0]);
+      if (week.length === 7) {
+        calendar.push(week);
+        week = [];
+      }
+      current.setDate(current.getDate() + 1);
+    }
 
-      {loading ? (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color="#fb444a" />
+    while (week.length > 0 && week.length < 7) week.push(null);
+    if (week.length > 0) calendar.push(week);
+
+    return calendar;
+  };
+
+  const goToPreviousMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() - 1);
+    setCurrentMonth(newMonth);
+  };
+
+  const goToNextMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() + 1);
+    const today = new Date();
+    if (newMonth <= today) {
+      setCurrentMonth(newMonth);
+    }
+  };
+
+  const handleDatePress = (date: string) => {
+    if (!datesWithData.has(date)) return;
+
+    setSelectedDate(date);
+    const dayReadings = readings.filter(r => 
+      new Date(r.created_at).toISOString().split('T')[0] === date
+    );
+
+    setDateReadings(dayReadings.map(r => ({
+      time: new Date(r.created_at).toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      }),
+      location: r.latitude && r.longitude 
+        ? `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`
+        : 'No GPS',
+      data: r,
+    })));
+    setShowModal(true);
+  };
+
+  const generateChartPath = () => {
+    if (dailyAverages.length === 0) return { 
+      path: '', 
+      minValue: 0, 
+      maxValue: 0, 
+      dates: [], 
+      chartWidth: SCREEN_WIDTH - 60,
+      chartHeight: CHART_HEIGHT,
+    };
+
+    const values = dailyAverages.map(avg => avg[selectedMetric as keyof DailyAverage] as number);
+    const dates = dailyAverages.map(avg => avg.date);
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    const range = maxValue - minValue || 1;
+
+    // Calculate dynamic width based on number of points (minimum spacing between points)
+    const dynamicChartWidth = Math.max(
+      SCREEN_WIDTH - 60,
+      CHART_PADDING_LEFT + CHART_PADDING_RIGHT + (values.length - 1) * MIN_POINT_SPACING
+    );
+    
+    const chartHeight = CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM;
+    const stepX = (dynamicChartWidth - CHART_PADDING_LEFT - CHART_PADDING_RIGHT) / Math.max(values.length - 1, 1);
+
+    const points = values.map((value, index) => {
+      const x = CHART_PADDING_LEFT + index * stepX;
+      const y = CHART_PADDING_TOP + chartHeight - ((value - minValue) / range * chartHeight);
+      return `${x},${y}`;
+    });
+
+    // Generate circle points for data markers
+    const circles = values.map((value, index) => {
+      const x = CHART_PADDING_LEFT + index * stepX;
+      const y = CHART_PADDING_TOP + chartHeight - ((value - minValue) / range * chartHeight);
+      return { x, y, value };
+    });
+
+    return { 
+      path: `M ${points.join(' L ')}`,
+      circles,
+      minValue: minValue.toFixed(1),
+      maxValue: maxValue.toFixed(1),
+      dates,
+      chartWidth: dynamicChartWidth,
+      chartHeight: CHART_HEIGHT,
+    };
+  };
+
+  const handleGenerateReport = async () => {
+    if (!user || readings.length === 0) return;
+    setGeneratingReport(true);
+    try {
+      console.log('📄 Generating history report...');
+      const uri = await generateHistoryReport({ userId: user.uid, days: 30 });
+      console.log('✅ Report generated:', uri);
+      await shareReport(uri, 'Verdex_History_Report.pdf');
+      console.log('✅ Report shared');
+    } catch (error: any) {
+      console.error('❌ Error generating history report:', error);
+      Alert.alert('Error', error?.message || 'Failed to generate report. Please try again.');
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
+  const calendar = generateCalendar(currentMonth);
+  const chartData = generateChartPath();
+  const selectedMetricInfo = metrics.find(m => m.key === selectedMetric)!;
+  const canGoNext = currentMonth < new Date();
+  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading history...</Text>
         </View>
-      ) : error ? (
-        <View style={styles.centerContent}>
-          <Ionicons name="alert-circle-outline" size={64} color="#fb444a" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchHistory}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>History</Text>
+          <Text style={styles.subtitle}>Last 30 days data analysis</Text>
+        </View>
+
+        {/* Generate Report Button */}
+        <View style={calendarStyles.reportButtonContainer}>
+          <TouchableOpacity
+            style={[calendarStyles.reportButton, { backgroundColor: colors.primary }]}
+            onPress={handleGenerateReport}
+            disabled={generatingReport || readings.length === 0}
+          >
+            <Ionicons name="document-text" size={20} color="#fff" />
+            <Text style={calendarStyles.reportButtonText}>
+              {generatingReport ? 'Generating...' : 'Generate PDF Report'}
+            </Text>
           </TouchableOpacity>
         </View>
-      ) : readings.length === 0 ? (
-        <View style={styles.centerContent}>
-          <Ionicons name="document-outline" size={64} color={colors.textSecondary} />
-          <Text style={styles.emptyText}>No history data available</Text>
-        </View>
-      ) : (
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Filter Buttons */}
-          <View style={styles.filterContainer}>
-            <TouchableOpacity
-              style={[styles.filterButton, selectedMetric === 'all' && styles.filterButtonActive]}
-              onPress={() => setSelectedMetric('all')}
-            >
-              <Text style={[styles.filterText, selectedMetric === 'all' && styles.filterTextActive]}>
-                All Metrics
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterButton, selectedMetric === 'nutrients' && styles.filterButtonActive]}
-              onPress={() => setSelectedMetric('nutrients')}
-            >
-              <Text style={[styles.filterText, selectedMetric === 'nutrients' && styles.filterTextActive]}>
-                Nutrients
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterButton, selectedMetric === 'environment' && styles.filterButtonActive]}
-              onPress={() => setSelectedMetric('environment')}
-            >
-              <Text style={[styles.filterText, selectedMetric === 'environment' && styles.filterTextActive]}>
-                Environment
-              </Text>
-            </TouchableOpacity>
-          </View>
 
-          {/* Chart Info */}
-          <View style={styles.chartInfo}>
-            <Text style={styles.chartTitle}>Historical Trends</Text>
-            <Text style={styles.chartSubtitle}>
-              {readings.length} readings • {readings[readings.length - 1] && new Date(readings[readings.length - 1].created_at).toLocaleDateString()} to {latestReading && new Date(latestReading.created_at).toLocaleDateString()}
+        {readings.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={64} color={colors.textSecondary} />
+            <Text style={styles.emptyTitle}>No data yet</Text>
+            <Text style={styles.emptyDescription}>
+              Start collecting soil data to see your history
             </Text>
           </View>
+        ) : (
+          <>
+            {/* Calendar */}
+            <View style={calendarStyles.section}>
+              <View style={calendarStyles.calendarHeaderRow}>
+                <TouchableOpacity 
+                  onPress={goToPreviousMonth}
+                  style={calendarStyles.navButton}
+                >
+                  <Ionicons name="chevron-back" size={24} color={colors.primary} />
+                </TouchableOpacity>
+                
+                <View style={calendarStyles.monthTitleContainer}>
+                  <Text style={calendarStyles.monthTitle}>{monthName}</Text>
+                  <Text style={calendarStyles.sectionSubtitle}>Tap highlighted dates for details</Text>
+                </View>
 
-          {/* Chart - Scrollable */}
-          <View style={styles.chartContainer}>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={true}
-              style={styles.chartScroll}
-              contentContainerStyle={{ paddingRight: 20 }}
-            >
-              <Svg height={CHART_HEIGHT} width={CHART_WIDTH + CHART_PADDING_LEFT}>
-                  {/* Grid lines */}
-                  {[0, 1, 2, 3, 4].map(i => {
-                    const y = 20 + ((CHART_HEIGHT - 60) * (i / 4));
-                    return (
-                      <Line
-                        key={`grid-${i}`}
-                        x1={CHART_PADDING_LEFT}
-                        y1={y}
-                        x2={CHART_WIDTH + CHART_PADDING_LEFT}
-                        y2={y}
-                        stroke={colors.card}
-                        strokeWidth={1}
-                        strokeDasharray="4,4"
-                      />
-                    );
-                  })}
-
-                  {/* Y-axis labels - show range for first visible metric */}
-                  {getVisibleMetrics().length > 0 && (() => {
-                    const firstMetric = getVisibleMetrics()[0];
-                    const chartData = generateChartPath(
-                      firstMetric.key as keyof SensorReading, 
-                      firstMetric.scale || 1, 
-                      CHART_WIDTH,
-                      firstMetric.minRange,
-                      firstMetric.maxRange
-                    );
-                    return [0, 2, 4].map(i => {
-                      const y = 20 + ((CHART_HEIGHT - 60) * (i / 4));
-                      const value = chartData.maxValue - ((chartData.maxValue - chartData.minValue) * (i / 4));
-                      const displayValue = firstMetric.scale ? (value / firstMetric.scale).toFixed(1) : value.toFixed(0);
-                      
-                      return (
-                        <SvgText
-                          key={`y-label-${i}`}
-                          x={CHART_PADDING_LEFT - 8}
-                          y={y + 4}
-                          fontSize={10}
-                          fill={colors.textSecondary}
-                          textAnchor="end"
-                        >
-                          {displayValue}
-                        </SvgText>
-                      );
-                    });
-                  })()}
-
-                  {/* Data lines */}
-                  {getVisibleMetrics().map(metric => {
-                    const chartData = generateChartPath(
-                      metric.key as keyof SensorReading, 
-                      metric.scale || 1, 
-                      CHART_WIDTH,
-                      metric.minRange,
-                      metric.maxRange
-                    );
-                    return (
-                      <Path
-                        key={metric.key}
-                        d={chartData.path}
-                        stroke={metric.color}
-                        strokeWidth={3}
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    );
-                  })}
-
-                  {/* Data points - Only render sampled points to prevent crashes */}
-                  {getVisibleMetrics().map(metric => {
-                    const chartData = generateChartPath(
-                      metric.key as keyof SensorReading, 
-                      metric.scale || 1, 
-                      CHART_WIDTH,
-                      metric.minRange,
-                      metric.maxRange
-                    );
-                    const { values, minValue, maxValue, indices } = chartData;
-                    const range = maxValue - minValue || 1;
-                    const xStep = CHART_WIDTH / Math.max(values.length - 1, 1);
-                    const yScale = (CHART_HEIGHT - 60) / range;
-
-                    // Only render sampled indices to reduce memory usage
-                    return indices.map((index) => {
-                      const value = values[index];
-                      const x = CHART_PADDING_LEFT + (index * xStep);
-                      const clampedValue = Math.max(minValue, Math.min(maxValue, value));
-                      const y = CHART_HEIGHT - 40 - ((clampedValue - minValue) * yScale);
-                      
-                      return (
-                        <Circle
-                          key={`${metric.key}-${index}`}
-                          cx={x}
-                          cy={y}
-                          r={3.5}
-                          fill={metric.color}
-                        />
-                      );
-                    });
-                  })}
-
-                  {/* X-axis labels (dates) - show more labels when spaced out */}
-                  {readings.length > 0 && (() => {
-                    const labelCount = Math.min(10, readings.length);
-                    const step = Math.floor(readings.length / labelCount);
-                    const indices = Array.from({ length: labelCount }, (_, i) => i * step).filter(i => i < readings.length);
-                    
-                    return indices.map(index => {
-                      const reading = readings[readings.length - 1 - index];
-                      const x = CHART_PADDING_LEFT + (index * (CHART_WIDTH / Math.max(readings.length - 1, 1)));
-                      const date = new Date(reading.created_at);
-                      const label = `${date.getMonth() + 1}/${date.getDate()}`;
-                      
-                      return (
-                        <SvgText
-                          key={`date-${index}`}
-                          x={x}
-                          y={CHART_HEIGHT - 10}
-                          fontSize={10}
-                          fill={colors.textSecondary}
-                          textAnchor="middle"
-                        >
-                          {label}
-                        </SvgText>
-                      );
-                    });
-                  })()}
-                </Svg>
-              </ScrollView>
-              <View style={styles.zoomHint}>
-                <Ionicons name="arrow-forward-outline" size={12} color={colors.textSecondary} />
-                <Text style={styles.zoomHintText}>Scroll horizontally to view all data</Text>
+                <TouchableOpacity 
+                  onPress={goToNextMonth}
+                  style={calendarStyles.navButton}
+                  disabled={!canGoNext}
+                >
+                  <Ionicons 
+                    name="chevron-forward" 
+                    size={24} 
+                    color={canGoNext ? colors.primary : colors.border} 
+                  />
+                </TouchableOpacity>
               </View>
-            </View>
-
-          {/* Legend */}
-          <View style={styles.legend}>
-            {getVisibleMetrics().map(metric => (
-              <View key={metric.key} style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: metric.color }]} />
-                <Text style={styles.legendLabel}>
-                  {metric.label} {metric.unit && `(${metric.unit})`}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Latest Reading Summary */}
-          {latestReading && (
-            <View style={styles.summaryContainer}>
-              <Text style={styles.summaryTitle}>Latest Reading</Text>
-              <Text style={styles.summaryTime}>
-                {new Date(latestReading.created_at).toLocaleString()}
-              </Text>
               
-              <View style={styles.summaryGrid}>
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Nitrogen</Text>
-                  <Text style={[styles.summaryValue, { color: '#32cd32' }]}>
-                    {latestReading.nitrogen}
-                  </Text>
-                  <Text style={styles.summaryUnit}>mg/kg</Text>
+              <View style={calendarStyles.calendarContainer}>
+                <View style={calendarStyles.calendarHeader}>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                    <Text key={day} style={calendarStyles.dayHeader}>{day}</Text>
+                  ))}
                 </View>
-                
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Phosphorus</Text>
-                  <Text style={[styles.summaryValue, { color: '#ff69b4' }]}>
-                    {latestReading.phosphorus}
-                  </Text>
-                  <Text style={styles.summaryUnit}>mg/kg</Text>
-                </View>
-                
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Potassium</Text>
-                  <Text style={[styles.summaryValue, { color: '#9370db' }]}>
-                    {latestReading.potassium}
-                  </Text>
-                  <Text style={styles.summaryUnit}>mg/kg</Text>
-                </View>
-                
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>pH</Text>
-                  <Text style={[styles.summaryValue, { color: '#ff6347' }]}>
-                    {latestReading.ph.toFixed(1)}
-                  </Text>
-                  <Text style={styles.summaryUnit}>pH</Text>
-                </View>
-                
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Temperature</Text>
-                  <Text style={[styles.summaryValue, { color: '#ffa500' }]}>
-                    {latestReading.temperature.toFixed(1)}
-                  </Text>
-                  <Text style={styles.summaryUnit}>°C</Text>
-                </View>
-                
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Moisture</Text>
-                  <Text style={[styles.summaryValue, { color: '#1e90ff' }]}>
-                    {latestReading.moisture}
-                  </Text>
-                  <Text style={styles.summaryUnit}>%</Text>
-                </View>
+
+                {calendar.map((week, weekIndex) => (
+                  <View key={weekIndex} style={calendarStyles.calendarWeek}>
+                    {week.map((date, dayIndex) => {
+                      if (!date) {
+                        return <View key={`empty-${dayIndex}`} style={calendarStyles.calendarDay} />;
+                      }
+
+                      const hasData = datesWithData.has(date);
+                      const dayNumber = new Date(date).getDate();
+
+                      return (
+                        <TouchableOpacity
+                          key={date}
+                          style={[
+                            calendarStyles.calendarDay,
+                            hasData && { 
+                              backgroundColor: colors.primary + '30', 
+                              borderColor: colors.primary 
+                            },
+                          ]}
+                          onPress={() => handleDatePress(date)}
+                          disabled={!hasData}
+                        >
+                          <Text style={[
+                            calendarStyles.calendarDayText,
+                            hasData && { color: colors.text, fontWeight: '600' },
+                          ]}>
+                            {dayNumber}
+                          </Text>
+                          {hasData && (
+                            <View style={[
+                              calendarStyles.dataDot, 
+                              { backgroundColor: colors.primary }
+                            ]} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
 
-              <View style={styles.sourceInfo}>
-                <Ionicons name="cube-outline" size={14} color={colors.textSecondary} />
-                <Text style={styles.sourceText}>
-                  Device: {latestReading.device_name} • ID: {latestReading.id}
-                </Text>
+              <View style={calendarStyles.calendarLegend}>
+                <View style={calendarStyles.legendItem}>
+                  <View style={[
+                    calendarStyles.legendBox, 
+                    { backgroundColor: colors.primary + '30', borderColor: colors.primary }
+                  ]} />
+                  <Text style={calendarStyles.legendText}>Has Data</Text>
+                </View>
+                <View style={calendarStyles.legendItem}>
+                  <View style={[
+                    calendarStyles.legendBox, 
+                    { backgroundColor: 'transparent', borderColor: colors.border }
+                  ]} />
+                  <Text style={calendarStyles.legendText}>No Data</Text>
+                </View>
               </View>
             </View>
-          )}
-        </ScrollView>
-      )}
+
+            {/* Trend Graph */}
+            <View style={calendarStyles.section}>
+              <Text style={calendarStyles.sectionTitle}>Daily Trends</Text>
+              <Text style={calendarStyles.sectionSubtitle}>
+                Average values per day ({dailyAverages.length} days)
+              </Text>
+
+              {/* Metric Selector - Grid Layout */}
+              <View style={calendarStyles.metricGrid}>
+                {metrics.map(metric => (
+                  <TouchableOpacity
+                    key={metric.key}
+                    style={[
+                      calendarStyles.metricChip,
+                      { borderColor: metric.color },
+                      selectedMetric === metric.key && { 
+                        backgroundColor: metric.color,
+                      },
+                    ]}
+                    onPress={() => setSelectedMetric(metric.key as keyof DailyAverage)}
+                  >
+                    <View style={[
+                      calendarStyles.metricDot,
+                      { backgroundColor: selectedMetric === metric.key ? '#fff' : metric.color }
+                    ]} />
+                    <Text style={[
+                      calendarStyles.metricLabel,
+                      selectedMetric === metric.key && { color: '#fff', fontWeight: '700' },
+                    ]}>
+                      {metric.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Chart */}
+              <View style={[styles.chartContainer, { backgroundColor: colors.card }]}>
+                {/* Y-axis label */}
+                <View style={calendarStyles.yAxisLabel}>
+                  <Text style={[calendarStyles.axisLabelText, { color: colors.textSecondary }]}>
+                    {selectedMetricInfo.label} {selectedMetricInfo.unit && `(${selectedMetricInfo.unit})`}
+                  </Text>
+                </View>
+
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={true}
+                  style={calendarStyles.chartScroll}
+                  contentContainerStyle={{ paddingRight: 20 }}
+                >
+                  <Svg width={chartData.chartWidth} height={chartData.chartHeight}>
+                    {/* Y-axis */}
+                    <Line
+                      x1={CHART_PADDING_LEFT}
+                      y1={CHART_PADDING_TOP}
+                      x2={CHART_PADDING_LEFT}
+                      y2={CHART_HEIGHT - CHART_PADDING_BOTTOM}
+                      stroke={colors.border}
+                      strokeWidth="1.5"
+                    />
+                    {/* X-axis */}
+                    <Line
+                      x1={CHART_PADDING_LEFT}
+                      y1={CHART_HEIGHT - CHART_PADDING_BOTTOM}
+                      x2={chartData.chartWidth - CHART_PADDING_RIGHT}
+                      y2={CHART_HEIGHT - CHART_PADDING_BOTTOM}
+                      stroke={colors.border}
+                      strokeWidth="1.5"
+                    />
+                    {/* Data line */}
+                    {chartData.path && (
+                      <>
+                        <Path
+                          d={chartData.path}
+                          stroke={selectedMetricInfo.color}
+                          strokeWidth="2.5"
+                          fill="none"
+                        />
+                        {/* Data points */}
+                        {chartData.circles?.map((point, index) => (
+                          <Circle
+                            key={index}
+                            cx={point.x}
+                            cy={point.y}
+                            r="4"
+                            fill={selectedMetricInfo.color}
+                            stroke="#fff"
+                            strokeWidth="1.5"
+                          />
+                        ))}
+                      </>
+                    )}
+                  </Svg>
+                  
+                  {/* Date labels below chart */}
+                  <View style={calendarStyles.dateLabelsContainer}>
+                    {chartData.circles?.map((point, index) => {
+                      const date = new Date(chartData.dates[index]);
+                      const dateLabel = `${date.getDate()}/${date.getMonth() + 1}`;
+                      return (
+                        <Text
+                          key={index}
+                          style={[
+                            calendarStyles.dateLabel,
+                            { 
+                              position: 'absolute',
+                              left: point.x - 15,
+                              color: colors.textSecondary,
+                            }
+                          ]}
+                        >
+                          {dateLabel}
+                        </Text>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+
+                {dailyAverages.length > 5 && (
+                  <View style={calendarStyles.scrollHint}>
+                    <Ionicons name="arrow-forward" size={12} color={colors.textSecondary} />
+                    <Text style={[calendarStyles.scrollHintText, { color: colors.textSecondary }]}>
+                      Scroll to see all data points
+                    </Text>
+                  </View>
+                )}
+
+                {/* X-axis label */}
+                <View style={calendarStyles.xAxisLabel}>
+                  <Text style={[calendarStyles.axisLabelText, { color: colors.textSecondary }]}>
+                    Date
+                  </Text>
+                </View>
+
+                {/* Value range */}
+                <View style={calendarStyles.valueRange}>
+                  <View style={calendarStyles.valueItem}>
+                    <Text style={calendarStyles.valueLabel}>Min</Text>
+                    <Text style={[calendarStyles.valueText, { color: selectedMetricInfo.color }]}>
+                      {chartData.minValue}{selectedMetricInfo.unit}
+                    </Text>
+                  </View>
+                  <View style={calendarStyles.valueItem}>
+                    <Text style={calendarStyles.valueLabel}>Max</Text>
+                    <Text style={[calendarStyles.valueText, { color: selectedMetricInfo.color }]}>
+                      {chartData.maxValue}{selectedMetricInfo.unit}
+                    </Text>
+                  </View>
+                  <View style={calendarStyles.valueItem}>
+                    <Text style={calendarStyles.valueLabel}>Avg</Text>
+                    <Text style={[calendarStyles.valueText, { color: selectedMetricInfo.color }]}>
+                      {((Number(chartData.minValue) + Number(chartData.maxValue)) / 2).toFixed(1)}{selectedMetricInfo.unit}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Date Details Modal */}
+      <Modal
+        visible={showModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowModal(false)}
+      >
+        <View style={calendarStyles.modalOverlay}>
+          <View style={[calendarStyles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={calendarStyles.modalHeader}>
+              <Text style={calendarStyles.modalTitle}>
+                {selectedDate && new Date(selectedDate).toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </Text>
+              <TouchableOpacity onPress={() => setShowModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={calendarStyles.modalScroll}>
+              <Text style={calendarStyles.modalSubtitle}>
+                {dateReadings.length} reading{dateReadings.length !== 1 ? 's' : ''} collected
+              </Text>
+
+              {dateReadings.map((reading, index) => (
+                <View 
+                  key={index} 
+                  style={[calendarStyles.readingCard, { backgroundColor: colors.background }]}
+                >
+                  <View style={calendarStyles.readingHeader}>
+                    <View style={calendarStyles.readingTime}>
+                      <Ionicons name="time" size={16} color={colors.primary} />
+                      <Text style={calendarStyles.readingTimeText}>{reading.time}</Text>
+                    </View>
+                    <View style={calendarStyles.readingLocation}>
+                      <Ionicons name="location" size={16} color={colors.textSecondary} />
+                      <Text style={calendarStyles.readingLocationText}>{reading.location}</Text>
+                    </View>
+                  </View>
+
+                  <View style={calendarStyles.readingDataGrid}>
+                    {metrics.map(metric => (
+                      <View key={metric.key} style={calendarStyles.readingDataItem}>
+                        <Text style={calendarStyles.readingDataLabel}>{metric.label}</Text>
+                        <Text style={[
+                          calendarStyles.readingDataValue, 
+                          { color: metric.color }
+                        ]}>
+                          {(reading.data[metric.key as keyof SensorReading] as number)?.toFixed(1) || 
+                           (metric.key === 'ph' ? reading.data.pH?.toFixed(1) : 'N/A')}
+                        </Text>
+                        <Text style={calendarStyles.readingDataUnit}>{metric.unit}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
