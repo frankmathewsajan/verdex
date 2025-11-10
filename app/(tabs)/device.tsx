@@ -1,4 +1,5 @@
 import { useBluetooth } from '@/contexts/bluetooth-context';
+import { useTheme } from '@/contexts/theme-context';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -36,6 +37,7 @@ interface SensorReading extends SensorData {
 }
 
 export default function DeviceScreen() {
+  const { colors } = useTheme();
   const { latestSensorData, isConnected, connectedDevice, connectToDevice: connectDeviceInContext, disconnectDevice: disconnectDeviceInContext, isDataValid } = useBluetooth();
   const [devices, setDevices] = useState<ScannedDevice[]>([]);
   const [showAllDevices, setShowAllDevices] = useState(false);
@@ -528,32 +530,32 @@ export default function DeviceScreen() {
     
     return (
       <TouchableOpacity 
-        style={[styles.deviceCard, isTarget && styles.deviceCardESP]}
+        style={[themedStyles.deviceCard, isTarget && themedStyles.deviceCardESP]}
         onPress={() => connectToDevice(item.id)}
       >
-        <View style={styles.deviceIcon}>
+        <View style={themedStyles.deviceIcon}>
           <Ionicons 
             name="bluetooth" 
             size={28} 
             color={isTarget ? "#0bda95" : "#fb444a"} 
           />
         </View>
-        <View style={styles.deviceInfo}>
-          <View style={styles.deviceNameRow}>
-            <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
+        <View style={themedStyles.deviceInfo}>
+          <View style={themedStyles.deviceNameRow}>
+            <Text style={themedStyles.deviceName}>{item.name || 'Unknown Device'}</Text>
             {isTarget && (
-              <View style={styles.espBadge}>
+              <View style={themedStyles.espBadge}>
                 <Ionicons name="flash" size={12} color="#0bda95" />
-                <Text style={styles.espBadgeText}>SENSOR</Text>
+                <Text style={themedStyles.espBadgeText}>SENSOR</Text>
               </View>
             )}
           </View>
-          <Text style={styles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
+          <Text style={themedStyles.deviceId}>ID: {item.id.slice(0, 17)}...</Text>
           {item.rssi && (
-            <Text style={styles.deviceRssi}>Signal: {item.rssi} dBm</Text>
+            <Text style={themedStyles.deviceRssi}>Signal: {item.rssi} dBm</Text>
           )}
         </View>
-        <Ionicons name="chevron-forward" size={20} color="#9e9c93" />
+        <Ionicons name="chevron-forward" size={20} color="colors.textSecondary" />
       </TouchableOpacity>
     );
   };
@@ -562,42 +564,42 @@ export default function DeviceScreen() {
     <>
       {/* Connected Device */}
       {connectedDevice && (
-        <View style={styles.connectedSection}>
-          <Text style={styles.sectionTitle}>Connected Device</Text>
-          <View style={styles.connectedCard}>
-            <View style={styles.connectedInfo}>
+        <View style={themedStyles.connectedSection}>
+          <Text style={themedStyles.sectionTitle}>Connected Device</Text>
+          <View style={themedStyles.connectedCard}>
+            <View style={themedStyles.connectedInfo}>
               <Ionicons name="checkmark-circle" size={24} color="#0bda95" />
-              <Text style={styles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
+              <Text style={themedStyles.connectedName}>{connectedDevice.name || 'Unknown Device'}</Text>
             </View>
             
             {/* Data Validity Indicator */}
-            <View style={[styles.validityIndicator, isDataValid ? styles.validityIndicatorValid : styles.validityIndicatorInvalid]}>
+            <View style={[themedStyles.validityIndicator, isDataValid ? themedStyles.validityIndicatorValid : themedStyles.validityIndicatorInvalid]}>
               <Ionicons 
                 name={isDataValid ? "checkmark-circle" : "alert-circle"} 
                 size={14} 
                 color={isDataValid ? "#0bda95" : "#ffa500"} 
               />
-              <Text style={styles.validityText}>
+              <Text style={themedStyles.validityText}>
                 {isDataValid ? 'Valid GPS Data' : 'Waiting for GPS Lock'}
               </Text>
             </View>
             
             {/* Batch Status Indicator */}
-            <View style={styles.batchStatusContainer}>
-              <View style={styles.batchStatus}>
-                <Ionicons name="cloud-upload-outline" size={16} color="#9e9c93" />
-                <Text style={styles.batchStatusText}>
+            <View style={themedStyles.batchStatusContainer}>
+              <View style={themedStyles.batchStatus}>
+                <Ionicons name="cloud-upload-outline" size={16} color="colors.textSecondary" />
+                <Text style={themedStyles.batchStatusText}>
                   Batch: {batchCompleted ? 'Completed ✓' : `${sensorBatch.length}/30 readings`}
                 </Text>
               </View>
               {!batchCompleted && sensorBatch.length > 0 && (
-                <View style={styles.batchProgress}>
-                  <View style={[styles.batchProgressFill, { width: `${(sensorBatch.length / 30) * 100}%` }]} />
+                <View style={themedStyles.batchProgress}>
+                  <View style={[themedStyles.batchProgressFill, { width: `${(sensorBatch.length / 30) * 100}%` }]} />
                 </View>
               )}
               {batchCompleted && (
                 <TouchableOpacity 
-                  style={styles.restartBatchButton} 
+                  style={themedStyles.restartBatchButton} 
                   onPress={() => {
                     setBatchCompleted(false);
                     setSensorBatch([]);
@@ -605,13 +607,13 @@ export default function DeviceScreen() {
                   }}
                 >
                   <Ionicons name="refresh" size={14} color="#0bda95" />
-                  <Text style={styles.restartBatchText}>Restart</Text>
+                  <Text style={themedStyles.restartBatchText}>Restart</Text>
                 </TouchableOpacity>
               )}
             </View>
             
-            <TouchableOpacity style={styles.disconnectButton} onPress={disconnectDevice}>
-              <Text style={styles.disconnectButtonText}>Disconnect</Text>
+            <TouchableOpacity style={themedStyles.disconnectButton} onPress={disconnectDevice}>
+              <Text style={themedStyles.disconnectButtonText}>Disconnect</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -619,15 +621,15 @@ export default function DeviceScreen() {
 
       {/* Scan Controls - Only show when NOT connected */}
       {!connectedDevice && (
-        <View style={styles.scanSection}>
-          <Text style={styles.sectionTitle}>Scan for Sensor Devices</Text>
+        <View style={themedStyles.scanSection}>
+          <Text style={themedStyles.sectionTitle}>Scan for Sensor Devices</Text>
           
           {/* Bluetooth State Indicator with Toggle */}
-          <View style={styles.stateIndicator}>
+          <View style={themedStyles.stateIndicator}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
               <View style={[
-                styles.stateIcon,
-                bluetoothState === 'PoweredOn' ? styles.stateIconOn : styles.stateIconOff
+                themedStyles.stateIcon,
+                bluetoothState === 'PoweredOn' ? themedStyles.stateIconOn : themedStyles.stateIconOff
               ]}>
                 <Ionicons 
                   name={bluetoothState === 'PoweredOn' ? 'bluetooth' : 'bluetooth-outline'} 
@@ -635,34 +637,34 @@ export default function DeviceScreen() {
                   color={bluetoothState === 'PoweredOn' ? '#0bda95' : '#fb444a'} 
                 />
               </View>
-              <Text style={styles.stateText}>
+              <Text style={themedStyles.stateText}>
                 Bluetooth: {bluetoothState === 'PoweredOn' ? 'On' : bluetoothState === 'PoweredOff' ? 'Off' : bluetoothState}
               </Text>
             </View>
             {bluetoothState === 'PoweredOff' && (
               <TouchableOpacity 
-                style={styles.toggleBluetoothButton} 
+                style={themedStyles.toggleBluetoothButton} 
                 onPress={toggleBluetooth}
               >
                 <Ionicons name="settings-outline" size={16} color="#fb444a" />
-                <Text style={styles.toggleBluetoothText}>Enable</Text>
+                <Text style={themedStyles.toggleBluetoothText}>Enable</Text>
               </TouchableOpacity>
             )}
           </View>
           
           {/* ESP Devices Section */}
-          <View style={styles.pairedDevicesHeader}>
-            <View style={styles.scanningIndicator}>
+          <View style={themedStyles.pairedDevicesHeader}>
+            <View style={themedStyles.scanningIndicator}>
               {isScanning && <ActivityIndicator size="small" color="#0bda95" />}
-              <Text style={styles.sectionTitle}>Bluetooth Devices</Text>
+              <Text style={themedStyles.sectionTitle}>Bluetooth Devices</Text>
             </View>
           </View>
 
-          <View style={styles.scanButtonGroup}>
+          <View style={themedStyles.scanButtonGroup}>
             <TouchableOpacity 
               style={[
-                styles.refreshButton,
-                isScanning && styles.refreshButtonActive
+                themedStyles.refreshButton,
+                isScanning && themedStyles.refreshButtonActive
               ]}
               onPress={isScanning ? stopScanning : startScanning}
               disabled={bluetoothState !== 'PoweredOn' || !hasPermissions}
@@ -672,22 +674,22 @@ export default function DeviceScreen() {
                 size={20} 
                 color="#fff" 
               />
-              <Text style={styles.refreshButtonText}>
+              <Text style={themedStyles.refreshButtonText}>
                 {isScanning ? 'Stop' : 'Scan'}
               </Text>
             </TouchableOpacity>
             
             {devices.length > 0 && devices.some(d => !isTargetDevice(d.name)) && (
               <TouchableOpacity 
-                style={styles.toggleFilterButton}
+                style={themedStyles.toggleFilterButton}
                 onPress={() => setShowAllDevices(!showAllDevices)}
               >
                 <Ionicons 
                   name={showAllDevices ? "eye-off" : "eye"} 
                   size={16} 
-                  color="#e0daca" 
+                  color="colors.text" 
                 />
-                <Text style={styles.toggleFilterText}>
+                <Text style={themedStyles.toggleFilterText}>
                   {showAllDevices ? 'Hide' : 'Show All'}
                 </Text>
               </TouchableOpacity>
@@ -695,14 +697,14 @@ export default function DeviceScreen() {
           </View>
           
           {!hasPermissions && (
-            <Text style={styles.permissionWarning}>
+            <Text style={themedStyles.permissionWarning}>
               ⚠️ Bluetooth permissions not granted
             </Text>
           )}
           
           {devices.length > 0 && (
-            <View style={styles.deviceListCount}>
-              <Text style={styles.deviceCountText}>
+            <View style={themedStyles.deviceListCount}>
+              <Text style={themedStyles.deviceCountText}>
                 {showAllDevices ? `All Devices (${devices.length})` : `Sensor Devices (${devices.filter(d => isTargetDevice(d.name)).length})`}
               </Text>
             </View>
@@ -716,12 +718,12 @@ export default function DeviceScreen() {
     if (connectedDevice) return null;
     
     return (
-      <View style={styles.emptyState}>
-        <Ionicons name="radio-outline" size={64} color="#9e9c93" />
-        <Text style={styles.emptyText}>
+      <View style={themedStyles.emptyState}>
+        <Ionicons name="radio-outline" size={64} color="colors.textSecondary" />
+        <Text style={themedStyles.emptyText}>
           {isScanning ? 'Searching for devices...' : 'No devices found'}
         </Text>
-        <Text style={styles.emptySubtext}>
+        <Text style={themedStyles.emptySubtext}>
           {isScanning 
             ? 'Make sure your ESP device is powered on'
             : 'Tap "Scan" to search for nearby Bluetooth devices'}
@@ -730,11 +732,13 @@ export default function DeviceScreen() {
     );
   };
 
+  const themedStyles = styles(colors);
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Ionicons name="radio" size={28} color="#e0daca" />
-        <Text style={styles.headerTitle}>Devices</Text>
+    <SafeAreaView style={themedStyles.container} edges={['top']}>
+      <View style={themedStyles.header}>
+        <Ionicons name="radio" size={28} color={colors.text} />
+        <Text style={themedStyles.headerTitle}>Devices</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -745,94 +749,94 @@ export default function DeviceScreen() {
           keyExtractor={(item) => item.id}
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={renderEmptyComponent}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={themedStyles.content}
           showsVerticalScrollIndicator={false}
         />
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView style={themedStyles.content} showsVerticalScrollIndicator={false}>
           {renderHeader()}
 
           {/* Live Sensor Data - Only show when connected */}
-          <View style={styles.sensorDataSection}>
+          <View style={themedStyles.sensorDataSection}>
             {/* Sensor Cards Grid */}
-            <View style={styles.sensorGrid}>
+            <View style={themedStyles.sensorGrid}>
               {/* Latitude */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="navigate" size={24} color="#fb444a" />
-                <Text style={styles.sensorLabel}>Latitude</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Latitude</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.latitude !== null ? `${sensorData.latitude}°` : '--'}
                 </Text>
               </View>
 
               {/* Longitude */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="navigate-outline" size={24} color="#4a9eff" />
-                <Text style={styles.sensorLabel}>Longitude</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Longitude</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.longitude !== null ? `${sensorData.longitude}°` : '--'}
                 </Text>
               </View>
 
               {/* Satellite Count */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="globe" size={24} color="#0bda95" />
-                <Text style={styles.sensorLabel}>Satellites</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Satellites</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.satelliteCount !== null ? `${sensorData.satelliteCount}` : '--'}
                 </Text>
               </View>
 
               {/* Bearing */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="compass" size={24} color="#ffa500" />
-                <Text style={styles.sensorLabel}>Bearing</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Bearing</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.bearing !== null ? `${sensorData.bearing}°` : '--'}
                 </Text>
               </View>
 
               {/* Nitrogen */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="leaf" size={24} color="#32cd32" />
-                <Text style={styles.sensorLabel}>Nitrogen (N)</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Nitrogen (N)</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.nitrogen !== null ? `${sensorData.nitrogen}` : '--'}
                 </Text>
               </View>
 
               {/* Phosphorus */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="leaf-outline" size={24} color="#ff69b4" />
-                <Text style={styles.sensorLabel}>Phosphorus (P)</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Phosphorus (P)</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.phosphorus !== null ? `${sensorData.phosphorus}` : '--'}
                 </Text>
               </View>
 
               {/* Potassium */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="fitness" size={24} color="#9370db" />
-                <Text style={styles.sensorLabel}>Potassium (K)</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Potassium (K)</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.potassium !== null ? `${sensorData.potassium}` : '--'}
                 </Text>
               </View>
 
               {/* pH */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="flask" size={24} color="#ff6347" />
-                <Text style={styles.sensorLabel}>pH Level</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>pH Level</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.pH !== null ? `${sensorData.pH}` : '--'}
                 </Text>
               </View>
 
               {/* Moisture */}
-              <View style={styles.sensorCard}>
+              <View style={themedStyles.sensorCard}>
                 <Ionicons name="water" size={24} color="#4a9eff" />
-                <Text style={styles.sensorLabel}>Moisture</Text>
-                <Text style={styles.sensorValue}>
+                <Text style={themedStyles.sensorLabel}>Moisture</Text>
+                <Text style={themedStyles.sensorValue}>
                   {sensorData.moisture !== null ? `${sensorData.moisture}%` : '--'}
                 </Text>
               </View>
@@ -844,10 +848,10 @@ export default function DeviceScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#303135',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -856,12 +860,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#46474a',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
     flex: 1,
     textAlign: 'center',
   },
@@ -877,11 +881,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: 'colors.text',
     marginBottom: 12,
   },
   connectedCard: {
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 8,
     padding: 16,
     borderWidth: 2,
@@ -896,7 +900,7 @@ const styles = StyleSheet.create({
   connectedName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#e0daca',
+    color: 'colors.text',
   },
   validityIndicator: {
     flexDirection: 'row',
@@ -919,16 +923,16 @@ const styles = StyleSheet.create({
   },
   validityText: {
     fontSize: 12,
-    color: '#e0daca',
+    color: 'colors.text',
     fontWeight: '500',
   },
   batchStatusContainer: {
     marginBottom: 12,
     padding: 12,
-    backgroundColor: '#3a3d42',
+    backgroundColor: 'colors.border',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#525560',
+    borderColor: 'colors.border',
   },
   batchStatus: {
     flexDirection: 'row',
@@ -938,11 +942,11 @@ const styles = StyleSheet.create({
   },
   batchStatusText: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
   },
   batchProgress: {
     height: 4,
-    backgroundColor: '#525560',
+    backgroundColor: 'colors.border',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -955,7 +959,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -1013,7 +1017,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fb444a',
   },
   refreshButtonDisabled: {
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     opacity: 0.5,
   },
   refreshButtonText: {
@@ -1028,7 +1032,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 6,
   },
   stateIcon: {
@@ -1046,7 +1050,7 @@ const styles = StyleSheet.create({
   },
   stateText: {
     fontSize: 14,
-    color: '#e0daca',
+    color: 'colors.text',
     fontWeight: '500',
   },
   permissionWarning: {
@@ -1062,7 +1066,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   deviceCard: {
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 8,
     padding: 16,
     flexDirection: 'row',
@@ -1102,18 +1106,18 @@ const styles = StyleSheet.create({
   deviceName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#e0daca',
+    color: 'colors.text',
     marginBottom: 4,
   },
   deviceId: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontFamily: 'monospace',
     marginBottom: 2,
   },
   deviceRssi: {
     fontSize: 11,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
   },
   emptyState: {
     flex: 1,
@@ -1124,12 +1128,12 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: 'colors.text',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
@@ -1145,7 +1149,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 8,
   },
   serialTitleRow: {
@@ -1187,14 +1191,14 @@ const styles = StyleSheet.create({
   },
   clearButtonText: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontWeight: '500',
   },
   terminalContainer: {
     backgroundColor: '#1a1a1c',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#46474a',
+    borderColor: 'colors.card',
     overflow: 'hidden',
   },
   terminalHeader: {
@@ -1205,7 +1209,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: '#2a2a2c',
     borderBottomWidth: 1,
-    borderBottomColor: '#46474a',
+    borderBottomColor: 'colors.card',
   },
   terminalButtons: {
     flexDirection: 'row',
@@ -1218,7 +1222,7 @@ const styles = StyleSheet.create({
   },
   terminalTitle: {
     fontSize: 11,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontFamily: 'monospace',
   },
   serialOutput: {
@@ -1235,14 +1239,14 @@ const styles = StyleSheet.create({
   },
   serialPlaceholder: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontStyle: 'italic',
     textAlign: 'center',
     paddingVertical: 40,
   },
   serialHint: {
     fontSize: 10,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     textAlign: 'center',
     marginTop: 8,
     paddingHorizontal: 20,
@@ -1256,11 +1260,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: '#2a2a2c',
     borderTopWidth: 1,
-    borderTopColor: '#46474a',
+    borderTopColor: 'colors.card',
   },
   terminalFooterText: {
     fontSize: 10,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontFamily: 'monospace',
   },
   terminalBaudRate: {
@@ -1300,14 +1304,14 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#525560',
+    borderColor: 'colors.border',
   },
   toggleFilterText: {
     fontSize: 13,
-    color: '#e0daca',
+    color: 'colors.text',
     fontWeight: '600',
   },
   deviceListCount: {
@@ -1315,7 +1319,7 @@ const styles = StyleSheet.create({
   },
   deviceCountText: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontWeight: '500',
   },
   deviceListActions: {
@@ -1342,12 +1346,12 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 6,
   },
   filterButtonText: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     fontWeight: '500',
   },
   filterButtonTextActive: {
@@ -1392,7 +1396,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sensorDataHeader: {
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     padding: 16,
     borderRadius: 8,
     marginBottom: 16,
@@ -1406,11 +1410,11 @@ const styles = StyleSheet.create({
   sensorDataTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: 'colors.text',
   },
   deviceNameText: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
   },
   sensorGrid: {
     flexDirection: 'row',
@@ -1419,7 +1423,7 @@ const styles = StyleSheet.create({
   },
   sensorCard: {
     width: '48%',
-    backgroundColor: '#46474a',
+    backgroundColor: 'colors.card',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -1427,12 +1431,15 @@ const styles = StyleSheet.create({
   },
   sensorLabel: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: 'colors.textSecondary',
     textAlign: 'center',
   },
   sensorValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: 'colors.text',
   },
 });
+
+
+

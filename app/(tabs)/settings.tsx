@@ -20,59 +20,149 @@ export default function SettingsScreen() {
   }, [user]);
 
   const loadProfile = async () => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ Load Profile Error: No authenticated user found');
+      setLoading(false);
+      return;
+    }
+    
+    // Get user ID - AuthContext uses 'uid' property
+    const userId = (user as any).uid || (user as any).id;
+    
+    if (!userId) {
+      console.error('❌ Load Profile Error: User ID is undefined. User object:', JSON.stringify(user, null, 2));
+      setLoading(false);
+      return;
+    }
+    
+    console.log('📥 Loading profile for user:', userId);
+    
     try {
       let { data, error } = await supabase
         .from('profiles')
         .select('user_name, language')
-        .eq('id', (user as any).id)
+        .eq('id', userId)
         .single();
       
       // If profile doesn't exist, create it
       if (error && error.code === 'PGRST116') {
-        const { error: insertError } = await supabase
+        console.log('⚠️ Profile not found (PGRST116), creating new profile...');
+        
+        const { data: insertData, error: insertError } = await supabase
           .from('profiles')
           .insert({ 
-            id: (user as any).id, 
+            id: userId, 
             user_name: null,
             language: 'english'
-          });
+          })
+          .select();
         
-        if (!insertError) {
+        if (insertError) {
+          console.error('❌ Profile Insert Error:', {
+            code: insertError.code,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint,
+            userId: userId,
+            operation: 'insert',
+            table: 'profiles'
+          });
+        } else {
+          console.log('✅ Profile created successfully:', insertData);
           setUserName('');
           setLanguage('english');
         }
+      } else if (error) {
+        console.error('❌ Supabase Load Error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          userId: userId,
+          operation: 'select',
+          table: 'profiles'
+        });
       } else if (data) {
+        console.log('✅ Profile loaded successfully:', data);
         setUserName(data.user_name || '');
         setLanguage(data.language || 'english');
       }
-    } catch (error) {
-      console.error('Error loading profile:', error);
+    } catch (error: any) {
+      console.error('❌ Load Profile Exception:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        stack: error.stack,
+        fullError: JSON.stringify(error, null, 2)
+      });
     } finally {
       setLoading(false);
     }
   };
 
   const saveProfile = async () => {
-    if (!user) return;
+    if (!user) {
+      console.error('❌ Save Profile Error: No authenticated user found');
+      Alert.alert('Error', 'No user session found. Please login again.');
+      return;
+    }
+    
+    // Get user ID - AuthContext uses 'uid' property
+    const userId = (user as any).uid || (user as any).id;
+    
+    if (!userId) {
+      console.error('❌ Save Profile Error: User ID is undefined. User object:', JSON.stringify(user, null, 2));
+      Alert.alert('Error', 'User ID not found. Please logout and login again.');
+      return;
+    }
+    
     setSaving(true);
+    console.log('💾 Saving profile...', { 
+      userId: userId, 
+      userName: userName.trim() || null, 
+      language 
+    });
+    
     try {
       // Use upsert with onConflict to ensure it works whether profile exists or not
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .upsert({ 
-          id: (user as any).id, 
+          id: userId, 
           user_name: userName.trim() || null,
           language 
         }, {
           onConflict: 'id'
-        });
+        })
+        .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase Save Error:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          userId: userId,
+          operation: 'upsert',
+          table: 'profiles'
+        });
+        throw error;
+      }
+      
+      console.log('✅ Profile saved successfully:', data);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update profile');
-      console.error('Save profile error:', error);
+      const errorMessage = error.message || 'Failed to update profile';
+      console.error('❌ Save Profile Exception:', {
+        message: errorMessage,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        stack: error.stack,
+        fullError: JSON.stringify(error, null, 2)
+      });
+      Alert.alert('Error', `${errorMessage}\n\nCheck console for details.`);
     } finally {
       setSaving(false);
     }

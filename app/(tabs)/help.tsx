@@ -1,4 +1,5 @@
 import { useBluetooth } from '@/contexts/bluetooth-context';
+import { useTheme } from '@/contexts/theme-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -12,6 +13,7 @@ interface Message {
 }
 
 export default function HelpScreen() {
+  const { colors } = useTheme();
   const { latestSensorData, isConnected } = useBluetooth();
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -79,27 +81,29 @@ export default function HelpScreen() {
     }
   };
 
+  const themedStyles = styles(colors);
+
   const renderMessage = ({ item }: { item: Message }) => (
-    <View style={[styles.messageBubble, item.isUser ? styles.userBubble : styles.botBubble]}>
-      <Text style={[styles.messageText, item.isUser ? styles.userText : styles.botText]}>
+    <View style={[themedStyles.messageBubble, item.isUser ? themedStyles.userBubble : themedStyles.botBubble]}>
+      <Text style={[themedStyles.messageText, item.isUser ? themedStyles.userText : themedStyles.botText]}>
         {item.text}
       </Text>
-      <Text style={styles.timestamp}>
+      <Text style={themedStyles.timestamp}>
         {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       </Text>
     </View>
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Ionicons name="chatbubbles" size={28} color="#e0daca" />
-        <Text style={styles.headerTitle}>Soil Advisor</Text>
+    <SafeAreaView style={themedStyles.container} edges={['top']}>
+      <View style={themedStyles.header}>
+        <Ionicons name="chatbubbles" size={28} color={colors.text} />
+        <Text style={themedStyles.headerTitle}>Soil Advisor</Text>
         <View style={{ width: 28 }} />
       </View>
 
       <KeyboardAvoidingView 
-        style={styles.chatContainer}
+        style={themedStyles.chatContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={90}
       >
@@ -107,30 +111,30 @@ export default function HelpScreen() {
           data={messages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messageList}
+          contentContainerStyle={themedStyles.messageList}
           showsVerticalScrollIndicator={false}
         />
 
         {isTyping && (
-          <View style={[styles.messageBubble, styles.botBubble]}>
-            <ActivityIndicator size="small" color="#0bda95" />
-            <Text style={[styles.messageText, styles.botText]}>Typing...</Text>
+          <View style={[themedStyles.messageBubble, themedStyles.botBubble]}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[themedStyles.messageText, themedStyles.botText]}>Typing...</Text>
           </View>
         )}
 
-        <View style={styles.inputContainer}>
+        <View style={themedStyles.inputContainer}>
           <TextInput
-            style={styles.input}
+            style={themedStyles.input}
             value={inputText}
             onChangeText={setInputText}
             placeholder="Ask about soil or crops..."
-            placeholderTextColor="#9e9c93"
+            placeholderTextColor={colors.textSecondary}
             multiline
             maxLength={500}
             onSubmitEditing={sendMessage}
           />
           <TouchableOpacity 
-            style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+            style={[themedStyles.sendButton, !inputText.trim() && themedStyles.sendButtonDisabled]}
             onPress={sendMessage}
             disabled={!inputText.trim()}
           >
@@ -142,10 +146,10 @@ export default function HelpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#303135',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -154,12 +158,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#46474a',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
     flex: 1,
     textAlign: 'center',
   },
@@ -178,15 +182,15 @@ const styles = StyleSheet.create({
   },
   userBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: '#0bda95',
+    backgroundColor: colors.primary,
     borderBottomRightRadius: 4,
   },
   botBubble: {
     alignSelf: 'flex-start',
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: '#525560',
+    borderColor: colors.border,
   },
   messageText: {
     fontSize: 15,
@@ -197,44 +201,49 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   botText: {
-    color: '#e0daca',
+    color: colors.text,
   },
   timestamp: {
     fontSize: 10,
-    color: 'rgba(224, 218, 202, 0.5)',
+    color: colors.textSecondary,
     marginTop: 6,
     alignSelf: 'flex-end',
+    opacity: 0.7,
   },
   inputContainer: {
     flexDirection: 'row',
     padding: 16,
     gap: 12,
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderTopWidth: 1,
-    borderTopColor: '#525560',
+    borderTopColor: colors.border,
   },
   input: {
     flex: 1,
-    backgroundColor: '#3a3d42',
+    backgroundColor: colors.border,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    color: '#e0daca',
+    color: colors.text,
     fontSize: 15,
     maxHeight: 100,
     borderWidth: 1,
-    borderColor: '#525560',
+    borderColor: colors.border,
   },
   sendButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#0bda95',
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButtonDisabled: {
     opacity: 0.4,
-    backgroundColor: '#525560',
+    backgroundColor: colors.border,
   },
 });
+
+
+
+
