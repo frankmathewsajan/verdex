@@ -1,4 +1,5 @@
 import { useAuth } from '@/contexts/auth-context';
+import { useTheme } from '@/contexts/theme-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
@@ -6,6 +7,7 @@ import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
+  const { colors } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,21 +32,21 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.background}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.background, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
           <View style={styles.form}>
             {/* Header */}
-            <Text style={styles.title}>SOIL.OS v1.0</Text>
-            <Text style={styles.subtitle}>Access Your Soil Data</Text>
+            <Text style={[styles.title, { color: colors.text }]}>SOIL.OS v1.0</Text>
+            <Text style={[styles.subtitle, { color: colors.text }]}>Access Your Soil Data</Text>
 
             {/* Email Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Username / Email</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Username / Email</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border, borderWidth: 1 }]}
                 placeholder="Enter your username or email"
-                placeholderTextColor="#e0daca80"
+                placeholderTextColor={colors.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
@@ -54,12 +56,12 @@ export default function LoginScreen() {
 
             {/* Password Input */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordContainer}>
+              <Text style={[styles.label, { color: colors.text }]}>Password</Text>
+              <View style={[styles.passwordContainer, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
                 <TextInput
-                  style={styles.passwordInput}
+                  style={[styles.passwordInput, { color: colors.text }]}
                   placeholder="Enter your password"
-                  placeholderTextColor="#e0daca80"
+                  placeholderTextColor={colors.textSecondary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPassword}
@@ -71,7 +73,7 @@ export default function LoginScreen() {
                   <Ionicons 
                     name={showPassword ? "eye-outline" : "eye-off-outline"} 
                     size={24} 
-                    color="#e0dacab3" 
+                    color={colors.textSecondary} 
                   />
                 </TouchableOpacity>
               </View>
@@ -81,14 +83,14 @@ export default function LoginScreen() {
             <View style={styles.forgotContainer}>
               <Link href="/(auth)/forgot-password" asChild>
                 <TouchableOpacity>
-                  <Text style={styles.forgotText}>Forgot Password?</Text>
+                  <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
                 </TouchableOpacity>
               </Link>
             </View>
 
             {/* Login Button */}
             <TouchableOpacity 
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              style={[styles.loginButton, { backgroundColor: colors.error }, loading && styles.loginButtonDisabled]}
               onPress={handleLogin}
               activeOpacity={0.8}
               disabled={loading}

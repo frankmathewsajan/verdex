@@ -1,6 +1,7 @@
 import GoogleMap from '@/components/google-map';
 import { useAuth } from '@/contexts/auth-context';
 import { useBluetooth } from '@/contexts/bluetooth-context';
+import { useTheme } from '@/contexts/theme-context';
 import { supabase } from '@/utils/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -58,6 +59,7 @@ interface LiveDataPoint {
 
 export default function DashboardScreen() {
   const { signOut } = useAuth();
+  const { colors } = useTheme();
   const { latestSensorData, isConnected, isDataValid } = useBluetooth();
   const [predictionData, setPredictionData] = useState<PredictionResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -462,49 +464,50 @@ export default function DashboardScreen() {
   const selectedPrediction = predictionData?.cleaned.predictions[selectedNutrient];
   const config = getNutrientConfig(selectedNutrient);
   const currentValue = getCurrentValue(selectedNutrient);
+  const themedStyles = styles(colors);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={themedStyles.container} edges={['top']}>
       {/* Header */}
-      <View style={styles.header}>
-        <Ionicons name="leaf-outline" size={28} color="#e0daca" />
-        <Text style={styles.headerTitle}>Soil Dashboard</Text>
+      <View style={themedStyles.header}>
+        <Ionicons name="leaf-outline" size={28} color={colors.text} />
+        <Text style={themedStyles.headerTitle}>Soil Dashboard</Text>
         <TouchableOpacity onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={24} color="#e0daca" />
+          <Ionicons name="log-out-outline" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView style={themedStyles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Loading State */}
         {loading && (
-          <View style={styles.loadingContainer}>
+          <View style={themedStyles.loadingContainer}>
             <ActivityIndicator size="large" color="#fb444a" />
-            <Text style={styles.loadingText}>Loading soil readings...</Text>
+            <Text style={themedStyles.loadingText}>Loading soil readings...</Text>
           </View>
         )}
 
         {/* Error State */}
         {error && !loading && (
-          <View style={styles.errorContainer}>
+          <View style={themedStyles.errorContainer}>
             <Ionicons name="alert-circle-outline" size={48} color="#fb444a" />
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={() => fetchPredictions(false)}>
-              <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={themedStyles.errorText}>{error}</Text>
+            <TouchableOpacity style={themedStyles.retryButton} onPress={() => fetchPredictions(false)}>
+              <Text style={themedStyles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* Current/Latest Readings - Always visible */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>
+        <View style={themedStyles.section}>
+          <View style={themedStyles.sectionHeader}>
+            <View style={themedStyles.sectionTitleRow}>
+              <Text style={themedStyles.sectionTitle}>
                 {isConnected ? 'Current Readings' : 'Latest Readings'}
               </Text>
               {isConnected && latestSensorData && (
-                <View style={styles.liveIndicator}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>LIVE</Text>
+                <View style={themedStyles.liveIndicator}>
+                  <View style={themedStyles.liveDot} />
+                  <Text style={themedStyles.liveText}>LIVE</Text>
                 </View>
               )}
             </View>
@@ -512,27 +515,27 @@ export default function DashboardScreen() {
               fetchPredictions(false);
               if (!isConnected) fetchLatestReading();
             }}>
-              <Ionicons name="refresh" size={20} color="#9e9c93" />
+              <Ionicons name="refresh" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
           
           {/* Data Validity Mini Indicator */}
           {isConnected && !isDataValid && (
-            <View style={styles.miniValidityWarning}>
+            <View style={themedStyles.miniValidityWarning}>
               <Ionicons name="alert-circle" size={14} color="#ffa500" />
-              <Text style={styles.miniValidityText}>
+              <Text style={themedStyles.miniValidityText}>
                 Waiting for GPS lock - data not saved
               </Text>
             </View>
           )}
           
-          <View style={styles.grid}>
+          <View style={themedStyles.grid}>
             <TouchableOpacity 
-              style={[styles.card, selectedNutrient === 'nitrogen' && styles.cardSelected]}
+              style={[themedStyles.card, selectedNutrient === 'nitrogen' && themedStyles.cardSelected]}
               onPress={() => setSelectedNutrient('nitrogen')}
             >
-              <Text style={styles.cardLabel}>Nitrogen (N)</Text>
-              <Text style={styles.cardValue}>
+              <Text style={themedStyles.cardLabel}>Nitrogen (N)</Text>
+              <Text style={themedStyles.cardValue}>
                 {isConnected && latestSensorData && latestSensorData.nitrogen !== null 
                   ? `${latestSensorData.nitrogen} ppm` 
                   : (!isConnected && latestDbReading && latestDbReading.nitrogen !== null 
@@ -541,11 +544,11 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.card, selectedNutrient === 'phosphorus' && styles.cardSelected]}
+              style={[themedStyles.card, selectedNutrient === 'phosphorus' && themedStyles.cardSelected]}
               onPress={() => setSelectedNutrient('phosphorus')}
             >
-              <Text style={styles.cardLabel}>Phosphorus (P)</Text>
-              <Text style={styles.cardValue}>
+              <Text style={themedStyles.cardLabel}>Phosphorus (P)</Text>
+              <Text style={themedStyles.cardValue}>
                 {isConnected && latestSensorData && latestSensorData.phosphorus !== null 
                   ? `${latestSensorData.phosphorus} ppm` 
                   : (!isConnected && latestDbReading && latestDbReading.phosphorus !== null 
@@ -554,11 +557,11 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.card, selectedNutrient === 'potassium' && styles.cardSelected]}
+              style={[themedStyles.card, selectedNutrient === 'potassium' && themedStyles.cardSelected]}
               onPress={() => setSelectedNutrient('potassium')}
             >
-              <Text style={styles.cardLabel}>Potassium (K)</Text>
-              <Text style={styles.cardValue}>
+              <Text style={themedStyles.cardLabel}>Potassium (K)</Text>
+              <Text style={themedStyles.cardValue}>
                 {isConnected && latestSensorData && latestSensorData.potassium !== null 
                   ? `${latestSensorData.potassium} ppm` 
                   : (!isConnected && latestDbReading && latestDbReading.potassium !== null 
@@ -567,11 +570,11 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.card, selectedNutrient === 'ph' && styles.cardSelected]}
+              style={[themedStyles.card, selectedNutrient === 'ph' && themedStyles.cardSelected]}
               onPress={() => setSelectedNutrient('ph')}
             >
-              <Text style={styles.cardLabel}>pH Level</Text>
-              <Text style={styles.cardValue}>
+              <Text style={themedStyles.cardLabel}>pH Level</Text>
+              <Text style={themedStyles.cardValue}>
                 {isConnected && latestSensorData && latestSensorData.pH !== null 
                   ? latestSensorData.pH.toFixed(1) 
                   : (!isConnected && latestDbReading && latestDbReading.pH !== null 
@@ -584,28 +587,28 @@ export default function DashboardScreen() {
 
         {/* Location Map Card - Always visible */}
         {mapLocations.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.mapCard}>
-              <View style={styles.mapHeader}>
-                <Ionicons name="location" size={24} color="#0bda95" />
-                <Text style={styles.mapTitle}>Reading Locations</Text>
-                <Text style={styles.locationCount}>{mapLocations.length} locations</Text>
+          <View style={themedStyles.section}>
+            <View style={themedStyles.mapCard}>
+              <View style={themedStyles.mapHeader}>
+                <Ionicons name="location" size={24} color={colors.primary} />
+                <Text style={themedStyles.mapTitle}>Reading Locations</Text>
+                <Text style={themedStyles.locationCount}>{mapLocations.length} locations</Text>
               </View>
 
               {/* Google Map */}
-              <View style={styles.mapContainer}>
+              <View style={themedStyles.mapContainer}>
                 <GoogleMap locations={mapLocations} height={250} />
               </View>
 
               {/* Location Legend */}
-              <View style={styles.mapLegend}>
-                <View style={styles.legendRow}>
-                  <View style={[styles.mapLegendDot, { backgroundColor: '#fb444a' }]} />
-                  <Text style={styles.mapLegendText}>Live Location (Connected)</Text>
+              <View style={themedStyles.mapLegend}>
+                <View style={themedStyles.legendRow}>
+                  <View style={[themedStyles.mapLegendDot, { backgroundColor: '#fb444a' }]} />
+                  <Text style={themedStyles.mapLegendText}>Live Location (Connected)</Text>
                 </View>
-                <View style={styles.legendRow}>
-                  <View style={[styles.mapLegendDot, { backgroundColor: '#0bda95' }]} />
-                  <Text style={styles.mapLegendText}>Historical Locations</Text>
+                <View style={themedStyles.legendRow}>
+                  <View style={[themedStyles.mapLegendDot, { backgroundColor: colors.primary }]} />
+                  <Text style={themedStyles.mapLegendText}>Historical Locations</Text>
                 </View>
               </View>
             </View>
@@ -614,25 +617,25 @@ export default function DashboardScreen() {
 
         {/* Live Graph - Only visible when connected */}
         {isConnected && liveData.length > 1 && (
-          <View style={styles.section}>
-            <View style={styles.liveGraphContainer}>
-              <View style={styles.liveGraphHeader}>
-                <Ionicons name="analytics" size={24} color="#0bda95" />
-                <Text style={styles.liveGraphTitle}>Real-Time Trends</Text>
+          <View style={themedStyles.section}>
+            <View style={themedStyles.liveGraphContainer}>
+              <View style={themedStyles.liveGraphHeader}>
+                <Ionicons name="analytics" size={24} color={colors.primary} />
+                <Text style={themedStyles.liveGraphTitle}>Real-Time Trends</Text>
                 {isConnected && liveData.length > 0 && (
-                  <Text style={styles.liveDataCount}>
+                  <Text style={themedStyles.liveDataCount}>
                     {liveData.length}/{MAX_LIVE_DATA_POINTS} readings
                   </Text>
                 )}
               </View>
 
               {/* Main Chart */}
-              <View style={styles.chartContainer}>
+              <View style={themedStyles.chartContainer}>
                 {/* Y-axis labels */}
-                <View style={styles.yAxisLabels}>
-                  <Text style={styles.axisLabel}>Max</Text>
-                  <Text style={styles.axisLabel}>Mid</Text>
-                  <Text style={styles.axisLabel}>Min</Text>
+                <View style={themedStyles.yAxisLabels}>
+                  <Text style={themedStyles.axisLabel}>Max</Text>
+                  <Text style={themedStyles.axisLabel}>Mid</Text>
+                  <Text style={themedStyles.axisLabel}>Min</Text>
                 </View>
                 
                 <View style={{ flex: 1 }}>
@@ -720,28 +723,28 @@ export default function DashboardScreen() {
                   </Svg>
                   
                   {/* X-axis label */}
-                  <Text style={styles.xAxisLabel}>Time (most recent →)</Text>
+                  <Text style={themedStyles.xAxisLabel}>Time (most recent →)</Text>
                 </View>
               </View>
 
                 {/* Legend */}
-                <View style={styles.legendContainer}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#32cd32' }]} />
-                    <Text style={styles.legendText}>N</Text>
+                <View style={themedStyles.legendContainer}>
+                  <View style={themedStyles.legendItem}>
+                    <View style={[themedStyles.legendDot, { backgroundColor: '#32cd32' }]} />
+                    <Text style={themedStyles.legendText}>N</Text>
                   </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#ff69b4' }]} />
-                    <Text style={styles.legendText}>P</Text>
+                  <View style={themedStyles.legendItem}>
+                    <View style={[themedStyles.legendDot, { backgroundColor: '#ff69b4' }]} />
+                    <Text style={themedStyles.legendText}>P</Text>
                   </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#9370db' }]} />
-                    <Text style={styles.legendText}>K</Text>
+                  <View style={themedStyles.legendItem}>
+                    <View style={[themedStyles.legendDot, { backgroundColor: '#9370db' }]} />
+                    <Text style={themedStyles.legendText}>K</Text>
                   </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
-                  <View style={[styles.legendDot, { backgroundColor: '#ff6347' }]} />
-                  <Text style={styles.legendText}>pH (×10)</Text>
+                  <View style={themedStyles.legendItem}>
+                    <View style={[themedStyles.legendDot, { backgroundColor: '#ff6347' }]} />
+                  <View style={[themedStyles.legendDot, { backgroundColor: '#ff6347' }]} />
+                  <Text style={themedStyles.legendText}>pH (×10)</Text>
                 </View>
               </View>
             </View>
@@ -750,35 +753,35 @@ export default function DashboardScreen() {
 
         {/* Forecast Chart - Always visible */}
         {selectedPrediction && (
-          <View style={styles.section}>
-            <View style={styles.chartCard}>
-              <View style={styles.chartHeader}>
+          <View style={themedStyles.section}>
+            <View style={themedStyles.chartCard}>
+              <View style={themedStyles.chartHeader}>
                 <Ionicons name={config.icon} size={28} color={config.color} />
-                <View style={styles.chartHeaderText}>
-                  <Text style={styles.chartLabel}>Forecast</Text>
-                  <Text style={[styles.chartTitle, { color: config.color }]}>{config.label}</Text>
+                <View style={themedStyles.chartHeaderText}>
+                  <Text style={themedStyles.chartLabel}>Forecast</Text>
+                  <Text style={[themedStyles.chartTitle, { color: config.color }]}>{config.label}</Text>
                 </View>
               </View>
               
               {/* Current Value */}
-              <View style={styles.currentValueRow}>
-                <Text style={styles.currentValueLabel}>Current</Text>
-                <Text style={styles.currentValueText}>
+              <View style={themedStyles.currentValueRow}>
+                <Text style={themedStyles.currentValueLabel}>Current</Text>
+                <Text style={themedStyles.currentValueText}>
                   {currentValue !== null ? currentValue.toFixed(1) : '--'} {config.unit}
                 </Text>
               </View>
 
               {/* Trend Info */}
               {selectedPrediction.statistics.trend && (
-                <View style={styles.trendRow}>
-                  <Text style={styles.trendText}>Trend</Text>
-                  <View style={styles.trendValue}>
+                <View style={themedStyles.trendRow}>
+                  <Text style={themedStyles.trendText}>Trend</Text>
+                  <View style={themedStyles.trendValue}>
                     <Ionicons 
                       name={isTrendIncreasing(selectedPrediction.statistics.trend) ? 'arrow-up' : 'arrow-down'} 
                       size={16} 
-                      color={isTrendIncreasing(selectedPrediction.statistics.trend) ? '#0bda95' : '#fb444a'} 
+                      color={isTrendIncreasing(selectedPrediction.statistics.trend) ? colors.primary : '#fb444a'} 
                     />
-                    <Text style={isTrendIncreasing(selectedPrediction.statistics.trend) ? styles.trendPositive : styles.trendNegative}>
+                    <Text style={isTrendIncreasing(selectedPrediction.statistics.trend) ? themedStyles.trendPositive : themedStyles.trendNegative}>
                       {removeEmojis(selectedPrediction.statistics.trend)}
                     </Text>
                   </View>
@@ -786,16 +789,16 @@ export default function DashboardScreen() {
               )}
 
               {/* Chart */}
-              <View style={styles.chartContainer}>
+              <View style={themedStyles.chartContainer}>
                 <Svg height={150} width={CHART_WIDTH} viewBox={`0 0 ${CHART_WIDTH} 150`}>
                   {selectedPrediction.forecast.length > 0 && (() => {
                     const chartData = generateChartPath(selectedPrediction.forecast, CHART_WIDTH, 150);
                     return (
                       <>
                         {/* Grid lines */}
-                        <Line x1="0" y1="37.5" x2={CHART_WIDTH} y2="37.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
-                        <Line x1="0" y1="75" x2={CHART_WIDTH} y2="75" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
-                        <Line x1="0" y1="112.5" x2={CHART_WIDTH} y2="112.5" stroke="#46474a" strokeWidth="1" strokeDasharray="4,4" />
+                        <Line x1="0" y1="37.5" x2={CHART_WIDTH} y2="37.5" stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+                        <Line x1="0" y1="75" x2={CHART_WIDTH} y2="75" stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
+                        <Line x1="0" y1="112.5" x2={CHART_WIDTH} y2="112.5" stroke={colors.border} strokeWidth="1" strokeDasharray="4,4" />
                         
                         {/* Forecast Line */}
                         <Path
@@ -814,32 +817,32 @@ export default function DashboardScreen() {
                     );
                   })()}
                 </Svg>
-                <View style={styles.chartLabels}>
-                  <Text style={styles.chartLabelText}>Now</Text>
-                  <Text style={styles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 4)}h</Text>
-                  <Text style={styles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 2)}h</Text>
-                  <Text style={styles.chartLabelText}>+{Math.floor(3 * selectedPrediction.forecast.length / 4)}h</Text>
-                  <Text style={styles.chartLabelText}>+{selectedPrediction.forecast.length}h</Text>
+                <View style={themedStyles.chartLabels}>
+                  <Text style={themedStyles.chartLabelText}>Now</Text>
+                  <Text style={themedStyles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 4)}h</Text>
+                  <Text style={themedStyles.chartLabelText}>+{Math.floor(selectedPrediction.forecast.length / 2)}h</Text>
+                  <Text style={themedStyles.chartLabelText}>+{Math.floor(3 * selectedPrediction.forecast.length / 4)}h</Text>
+                  <Text style={themedStyles.chartLabelText}>+{selectedPrediction.forecast.length}h</Text>
                 </View>
               </View>
 
               {/* Statistics */}
-              <View style={styles.statsGrid}>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Min</Text>
-                  <Text style={styles.statValue}>
+              <View style={themedStyles.statsGrid}>
+                <View style={themedStyles.statItem}>
+                  <Text style={themedStyles.statLabel}>Min</Text>
+                  <Text style={themedStyles.statValue}>
                     {selectedPrediction.statistics.min?.toFixed(1) || '--'} {config.unit}
                   </Text>
                 </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Mean</Text>
-                  <Text style={styles.statValue}>
+                <View style={themedStyles.statItem}>
+                  <Text style={themedStyles.statLabel}>Mean</Text>
+                  <Text style={themedStyles.statValue}>
                     {selectedPrediction.statistics.mean?.toFixed(1) || '--'} {config.unit}
                   </Text>
                 </View>
-                <View style={styles.statItem}>
-                  <Text style={styles.statLabel}>Max</Text>
-                  <Text style={styles.statValue}>
+                <View style={themedStyles.statItem}>
+                  <Text style={themedStyles.statLabel}>Max</Text>
+                  <Text style={themedStyles.statValue}>
                     {selectedPrediction.statistics.max?.toFixed(1) || '--'} {config.unit}
                   </Text>
                 </View>
@@ -850,20 +853,20 @@ export default function DashboardScreen() {
 
         {/* Predictions Not Available Message - Always visible when no predictions */}
         {!selectedPrediction && (
-          <View style={styles.section}>
-            <View style={styles.chartCard}>
-              <View style={styles.centerContent}>
-                <Ionicons name="cloud-offline-outline" size={48} color="#9e9c93" />
-                <Text style={styles.unavailableTitle}>Predictions Unavailable</Text>
-                <Text style={styles.unavailableText}>
+          <View style={themedStyles.section}>
+            <View style={themedStyles.chartCard}>
+              <View style={themedStyles.centerContent}>
+                <Ionicons name="cloud-offline-outline" size={48} color={colors.textSecondary} />
+                <Text style={themedStyles.unavailableTitle}>Predictions Unavailable</Text>
+                <Text style={themedStyles.unavailableText}>
                   {predictionDisabled 
                     ? 'The forecast service failed after multiple attempts. Tap below to retry manually.'
                     : 'The forecast service is currently offline. Predictions will load when service is available.'}
                 </Text>
                 {predictionDisabled && (
-                  <TouchableOpacity style={styles.retryButton} onPress={manualRetryPredictions}>
+                  <TouchableOpacity style={themedStyles.retryButton} onPress={manualRetryPredictions}>
                     <Ionicons name="refresh" size={20} color="#fff" style={{ marginRight: 8 }} />
-                    <Text style={styles.retryButtonText}>Retry Predictions</Text>
+                    <Text style={themedStyles.retryButtonText}>Retry Predictions</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -873,29 +876,29 @@ export default function DashboardScreen() {
 
         {/* Key Metrics - Always visible when predictions available */}
         {selectedPrediction && (
-          <View style={[styles.section, { paddingBottom: 24 }]}>
-            <Text style={styles.sectionTitle}>Statistics</Text>
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricCard}>
-                <Ionicons name="trending-up" size={32} color="#9e9c93" />
-                <Text style={styles.metricValue}>
+          <View style={[themedStyles.section, { paddingBottom: 24 }]}>
+            <Text style={themedStyles.sectionTitle}>Statistics</Text>
+            <View style={themedStyles.metricsGrid}>
+              <View style={themedStyles.metricCard}>
+                <Ionicons name="trending-up" size={32} color={colors.textSecondary} />
+                <Text style={themedStyles.metricValue}>
                   {selectedPrediction.statistics.range?.toFixed(1) || '--'}
                 </Text>
-                <Text style={styles.metricLabel}>Range</Text>
+                <Text style={themedStyles.metricLabel}>Range</Text>
               </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="stats-chart" size={32} color="#9e9c93" />
-                <Text style={styles.metricValue}>
+              <View style={themedStyles.metricCard}>
+                <Ionicons name="stats-chart" size={32} color={colors.textSecondary} />
+                <Text style={themedStyles.metricValue}>
                   {selectedPrediction.statistics.std?.toFixed(2) || '--'}
                 </Text>
-                <Text style={styles.metricLabel}>Std Dev</Text>
+                <Text style={themedStyles.metricLabel}>Std Dev</Text>
               </View>
-              <View style={styles.metricCard}>
-                <Ionicons name="pulse" size={32} color="#9e9c93" />
-                <Text style={styles.metricValue}>
+              <View style={themedStyles.metricCard}>
+                <Ionicons name="pulse" size={32} color={colors.textSecondary} />
+                <Text style={themedStyles.metricValue}>
                   {predictionData?.cleaned.data_points || '--'}
                 </Text>
-                <Text style={styles.metricLabel}>Data Points</Text>
+                <Text style={themedStyles.metricLabel}>Data Points</Text>
               </View>
             </View>
           </View>
@@ -905,10 +908,10 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#303135',
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -917,12 +920,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#46474a',
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
     flex: 1,
     textAlign: 'center',
   },
@@ -947,13 +950,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   liveIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#0bda95',
+    backgroundColor: colors.primary,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -993,7 +996,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   card: {
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderRadius: 8,
     padding: 16,
     width: '47%',
@@ -1005,16 +1008,16 @@ const styles = StyleSheet.create({
   },
   cardLabel: {
     fontSize: 16,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   cardValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   chartCard: {
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderRadius: 8,
     padding: 24,
   },
@@ -1029,13 +1032,13 @@ const styles = StyleSheet.create({
   },
   chartLabel: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   chartTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   currentValueRow: {
     flexDirection: 'row',
@@ -1044,17 +1047,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: '#303135',
+    backgroundColor: colors.background,
     borderRadius: 6,
   },
   currentValueLabel: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: colors.textSecondary,
   },
   currentValueText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   trendRow: {
     flexDirection: 'row',
@@ -1064,7 +1067,7 @@ const styles = StyleSheet.create({
   },
   trendText: {
     fontSize: 16,
-    color: '#9e9c93',
+    color: colors.textSecondary,
   },
   trendValue: {
     flexDirection: 'row',
@@ -1074,7 +1077,7 @@ const styles = StyleSheet.create({
   trendPositive: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#0bda95',
+    color: colors.primary,
     textTransform: 'capitalize',
   },
   trendNegative: {
@@ -1095,12 +1098,12 @@ const styles = StyleSheet.create({
   },
   axisLabel: {
     fontSize: 10,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   xAxisLabel: {
     fontSize: 11,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 8,
     fontWeight: '500',
@@ -1113,7 +1116,7 @@ const styles = StyleSheet.create({
   chartLabelText: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#9e9c93',
+    color: colors.textSecondary,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -1121,7 +1124,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#303135',
+    borderTopColor: colors.background,
   },
   statItem: {
     flex: 1,
@@ -1129,13 +1132,13 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   statValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   metricsGrid: {
     flexDirection: 'row',
@@ -1143,7 +1146,7 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
@@ -1152,11 +1155,11 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   metricLabel: {
     fontSize: 11,
-    color: '#9e9c93',
+    color: colors.textSecondary,
   },
   loadingContainer: {
     flex: 1,
@@ -1167,7 +1170,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#9e9c93',
+    color: colors.textSecondary,
   },
   errorContainer: {
     flex: 1,
@@ -1198,7 +1201,7 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     marginTop: 12,
     textAlign: 'center',
   },
@@ -1211,17 +1214,17 @@ const styles = StyleSheet.create({
   unavailableTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
     marginTop: 8,
   },
   unavailableText: {
     fontSize: 14,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
   },
   liveGraphContainer: {
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
   },
@@ -1235,12 +1238,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   liveDataCount: {
     fontSize: 12,
-    color: '#9e9c93',
-    backgroundColor: '#3a3d42',
+    color: colors.textSecondary,
+    backgroundColor: colors.border,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1251,7 +1254,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#3a3d42',
+    borderTopColor: colors.border,
   },
   legendItem: {
     flexDirection: 'row',
@@ -1265,11 +1268,11 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 12,
-    color: '#e0daca',
+    color: colors.text,
     fontWeight: '500',
   },
   mapCard: {
-    backgroundColor: '#46474a',
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 16,
   },
@@ -1283,12 +1286,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#e0daca',
+    color: colors.text,
   },
   locationCount: {
     fontSize: 12,
-    color: '#9e9c93',
-    backgroundColor: '#3a3d42',
+    color: colors.textSecondary,
+    backgroundColor: colors.border,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
@@ -1305,7 +1308,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#3a3d42',
+    borderBottomColor: colors.border,
   },
   legendRow: {
     flexDirection: 'row',
@@ -1319,7 +1322,7 @@ const styles = StyleSheet.create({
   },
   mapLegendText: {
     fontSize: 12,
-    color: '#e0daca',
+    color: colors.text,
   },
   locationList: {
     gap: 8,
@@ -1338,7 +1341,7 @@ const styles = StyleSheet.create({
   locationText: {
     flex: 1,
     fontSize: 13,
-    color: '#e0daca',
+    color: colors.text,
     fontFamily: 'monospace',
   },
   liveLabel: {
@@ -1352,7 +1355,7 @@ const styles = StyleSheet.create({
   },
   moreLocations: {
     fontSize: 12,
-    color: '#9e9c93',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 4,
     fontStyle: 'italic',

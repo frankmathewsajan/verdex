@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { BluetoothProvider } from '@/contexts/bluetooth-context';
+import { ThemeProvider as CustomThemeProvider } from '@/contexts/theme-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export const unstable_settings = {
@@ -38,10 +39,12 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <BluetoothProvider>
-        <RootLayoutNav />
-      </BluetoothProvider>
-    </AuthProvider>
+    <CustomThemeProvider>
+      <AuthProvider>
+        <BluetoothProvider>
+          <RootLayoutNav />
+        </BluetoothProvider>
+      </AuthProvider>
+    </CustomThemeProvider>
   );
 }
