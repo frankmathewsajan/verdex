@@ -141,7 +141,7 @@ export default function HomeScreen() {
           <View style={styles.logoContainer}>
             <Ionicons name="leaf" size={20} color={colors.primary} />
           </View>
-          <Text style={styles.logoText}>VERDEX</Text>
+          <Text style={styles.logoText}>EarthSmell</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity 

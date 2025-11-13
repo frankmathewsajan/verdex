@@ -38,7 +38,7 @@ export default function ForgotPasswordScreen() {
             </TouchableOpacity>
 
             {/* Header */}
-            <Text style={styles.title}>VERDEX v1.0</Text>
+            <Text style={styles.title}>EarthSmell v1.0</Text>
             <Text style={styles.subtitle}>Reset Your Password</Text>
 
             {!sent ? (

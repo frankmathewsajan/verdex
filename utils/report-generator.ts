@@ -135,7 +135,7 @@ const generateHistoryReportHTML = (data: SensorData[], dateRange: { start: strin
     </head>
     <body>
       <div class="header">
-        <div class="logo">🌱 VERDEX</div>
+        <div class="logo">🌱 EarthSmell</div>
         <div class="title">Soil Analysis Report</div>
         <div class="subtitle">${startDate} - ${endDate}</div>
       </div>
@@ -225,9 +225,9 @@ const generateHistoryReportHTML = (data: SensorData[], dateRange: { start: strin
       </div>
       
       <div class="footer">
-        <p><strong>Verdex Soil Monitoring System</strong></p>
+        <p><strong>EarthSmell Soil Monitoring System</strong></p>
         <p>Report generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-        <p style="margin-top: 10px;">For detailed recommendations, visit the Verdex app or consult your agricultural advisor.</p>
+        <p style="margin-top: 10px;">For detailed recommendations, visit the EarthSmell app or consult your agricultural advisor.</p>
       </div>
     </body>
     </html>
@@ -280,7 +280,7 @@ const generateRecommendationReportHTML = (userName: string, data: SensorData, re
     </head>
     <body>
       <div class="header">
-        <div class="logo">🌱 VERDEX</div>
+        <div class="logo">🌱 EarthSmell</div>
         <div class="rx-symbol">℞</div>
         <div class="title">Soil Treatment Prescription</div>
         <div class="subtitle">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
@@ -353,9 +353,9 @@ const generateRecommendationReportHTML = (userName: string, data: SensorData, re
       </div>
       
       <div class="footer">
-        <p><strong>Verdex Soil Monitoring System</strong></p>
+        <p><strong>EarthSmell Soil Monitoring System</strong></p>
         <p>This prescription is based on current soil analysis data</p>
-        <p style="margin-top: 10px;">For support or questions, contact your Verdex representative</p>
+        <p style="margin-top: 10px;">For support or questions, contact your EarthSmell representative</p>
       </div>
     </body>
     </html>

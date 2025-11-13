@@ -75,7 +75,7 @@ const generateSMSText = (
   const health = calculateHealthPercentage(data);
   
   if (language === 'english') {
-    let text = `🌱 Verdex Soil Report\n`;
+    let text = `🌱 EarthSmell Soil Report\n`;
     text += `N:${data.nitrogen} P:${data.phosphorus} K:${data.potassium}\n`;
     text += `pH:${ph} | Moisture:${data.moisture}% | Temp:${data.temperature}°C\n`;
     text += `Health: ${health}%\n`;
@@ -87,7 +87,7 @@ const generateSMSText = (
       });
     }
     
-    text += `\nView full report in Verdex app`;
+    text += `\nView full report in EarthSmell app`;
     return text;
   }
   

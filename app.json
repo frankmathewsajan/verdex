@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "verdex",
-    "slug": "verdex",
+    "name": "earthsmell",
+    "slug": "earthsmell",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "verdex",
+    "scheme": "earthsmell",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -20,14 +20,16 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.verdex",
+      "package": "com.anonymous.earthsmell",
       "permissions": [
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
         "BLUETOOTH_SCAN",
         "BLUETOOTH_CONNECT",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -51,13 +53,20 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Verdex to use your location to show where soil readings were taken."
+          "locationAlwaysAndWhenInUsePermission": "Allow EarthSmell to use your location to show where soil readings were taken."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ae7928ef-1c36-4567-bdd7-bfca045ea8ed"
+      }
     }
   }
 }

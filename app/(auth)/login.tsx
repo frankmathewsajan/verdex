@@ -56,7 +56,7 @@ export default function LoginScreen() {
         <View style={styles.content}>
           <View style={styles.form}>
             {/* Header */}
-            <Text style={[styles.title, { color: colors.text }]}>VERDEX v1.0</Text>
+            <Text style={[styles.title, { color: colors.text }]}>EarthSmell v1.0</Text>
             <Text style={[styles.subtitle, { color: colors.text }]}>Access Your Soil Data</Text>
 
             {/* Email Input */}

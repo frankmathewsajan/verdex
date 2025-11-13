@@ -252,7 +252,7 @@ export default function HistoryScreen() {
       console.log('📄 Generating history report...');
       const uri = await generateHistoryReport({ userId: user.uid, days: 30 });
       console.log('✅ Report generated:', uri);
-      await shareReport(uri, 'Verdex_History_Report.pdf');
+      await shareReport(uri, 'EarthSmell_History_Report.pdf');
       console.log('✅ Report shared');
     } catch (error: any) {
       console.error('❌ Error generating history report:', error);

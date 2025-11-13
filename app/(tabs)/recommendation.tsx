@@ -218,7 +218,7 @@ export default function RecommendationScreen() {
         data: mostRecentData,
         recommendations,
       });
-      await shareReport(uri, `Verdex_Prescription_${selectedCrop.name}.pdf`);
+      await shareReport(uri, `EarthSmell_Prescription_${selectedCrop.name}.pdf`);
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to generate report');
     } finally {

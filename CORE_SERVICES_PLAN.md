@@ -121,7 +121,7 @@ npx expo install expo-sms
 
 **English:**
 ```
-🌱 Verdex Soil Report
+🌱 EarthSmell Soil Report
 N: [value] P: [value] K: [value]
 pH: [value] | Health: [%]
 Recommendation: [brief]
@@ -239,7 +239,7 @@ Overall soil health is [percentage] percent.
 Recommendations:
 [Read each recommendation slowly]
 
-Thank you for using Verdex.
+Thank you for using EarthSmell.
 ```
 
 **Hindi:**
@@ -389,4 +389,4 @@ From `profiles` table:
 - Add loading indicators during PDF generation
 - Store user's last used language preference
 - Consider offline mode for voice service
-- PDF reports should include Verdex branding/logo
+- PDF reports should include EarthSmell branding/logo
