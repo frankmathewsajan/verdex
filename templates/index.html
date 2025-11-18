@@ -1,17 +1,36 @@
 <!DOCTYPE html>
+<!--
+    VERDEX Soil Prediction System - Web Dashboard
+    
+    Interactive web interface for soil parameter forecasting using LSTM models.
+    Features:
+    - Real-time predictions for N, P, Moisture, pH
+    - Historical data visualization with Chart.js
+    - Model status monitoring
+    - API documentation
+    - Supabase integration
+    
+    Version: 3.0
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Soil Prediction System - API Guide & Dashboard</title>
+    
+    <!-- Chart.js for data visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <!-- ==================== STYLES ==================== -->
     <style>
+        /* ==================== GLOBAL RESET ==================== */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
+        /* ==================== BODY & LAYOUT ==================== */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -24,6 +43,7 @@
             margin: 0 auto;
         }
 
+        /* ==================== HEADER STYLES ==================== */
         header {
             background: rgba(255,255,255,0.95);
             border-radius: 10px;
@@ -370,16 +390,20 @@
 </head>
 <body>
     <div class="container">
+        <!-- ==================== HEADER SECTION ==================== -->
         <header>
             <h1>🌱 Soil Prediction System</h1>
             <p>AI-Powered Time Series Forecasting for Soil Parameters</p>
             <div class="status-badge" id="statusBadge">Loading...</div>
         </header>
 
+        <!-- ==================== MAIN LAYOUT ==================== -->
         <div class="main-layout">
+            <!-- LEFT SIDEBAR: Controls and Status -->
             <div class="sidebar">
+                <!-- Data Sync Card -->
                 <div class="card">
-                    <h2>� Sync Data</h2>
+                    <h2>📂 Sync Data</h2>
                     <div class="form-group">
                         <label>Fetch from Supabase:</label>
                         <small style="color: #999;">Auto-syncs latest data from raw_sensor_readings table</small>
@@ -387,6 +411,7 @@
                     <button onclick="syncData()">🔄 Sync from Supabase</button>
                 </div>
 
+                <!-- Action Buttons Card -->
                 <div class="card">
                     <h2>⚙️ Actions</h2>
                     <button onclick="makePrediction()">🔮 Make Prediction</button>
@@ -394,6 +419,7 @@
                     <button class="button-secondary" onclick="getDataInfo()">📈 Data Statistics</button>
                 </div>
 
+                <!-- Model Status Display -->
                 <div class="card">
                     <h2>🤖 Model Status</h2>
                     <div id="modelStatus" class="status-section">
@@ -405,10 +431,12 @@
                             <strong>Status:</strong>
                             <span class="status-value" id="appStatus">--</span>
                         </div>
+                        <!-- Dynamic model list populated by JS -->
                         <div id="modelsList" style="margin-top: 10px;"></div>
                     </div>
                 </div>
 
+                <!-- Data Statistics Card -->
                 <div class="card">
                     <h2>📊 Data Info</h2>
                     <div id="dataInfo" class="status-section">
@@ -417,21 +445,27 @@
                 </div>
             </div>
 
+            <!-- RIGHT MAIN CONTENT AREA -->
             <div class="main-content">
+                <!-- Alert/Message Container -->
                 <div id="alertContainer"></div>
 
+                <!-- Tab Navigation -->
                 <div class="tabs">
                     <button class="tab-btn active" onclick="switchTab('predictions')">🎯 Predictions</button>
                     <button class="tab-btn" onclick="switchTab('charts')">📊 Charts</button>
                     <button class="tab-btn" onclick="switchTab('api')">🔌 API Docs</button>
                 </div>
 
+                <!-- TAB 1: Predictions Display -->
                 <div id="predictions" class="tab-content card active">
                     <h2>🔮 Forecast Results</h2>
                     <p style="color: #999; margin-bottom: 15px;">Upload data and click "Make Prediction" to see forecasts</p>
+                    <!-- Dynamic prediction cards populated by JS -->
                     <div id="predictionsContainer" class="predictions-grid"></div>
                 </div>
 
+                <!-- TAB 2: Charts and Visualization -->
                 <div id="charts" class="tab-content card">
                     <h2>📊 Historical Data Visualization</h2>
                     <div class="form-group" style="margin-bottom: 20px;">
@@ -448,6 +482,7 @@
                     </div>
                 </div>
 
+                <!-- TAB 3: API Documentation -->
                 <div id="api" class="tab-content card">
                     <h2>🔌 API Documentation</h2>
                     <div class="api-docs">
@@ -508,31 +543,52 @@ SUPABASE_KEY=your-api-key</div>
             </div>
         </div>
 
+        <!-- ==================== FOOTER ==================== -->
         <div class="footer">
             <p>💨 Powered by Pre-trained LSTM Models | Version 2.1</p>
         </div>
     </div>
 
+    <!-- ==================== JAVASCRIPT ==================== -->
     <script>
+        // Global chart instance (destroyed/recreated when switching parameters)
         let currentChart = null;
 
+        /**
+         * Initialize page on DOM load
+         * - Perform initial health check
+         * - Load model status
+         * - Set up periodic health checks (every 5 seconds)
+         */
         document.addEventListener('DOMContentLoaded', function() {
             checkHealth();
             loadModelsStatus();
-            setInterval(checkHealth, 5000);
+            setInterval(checkHealth, 5000);  // Poll health every 5 seconds
         });
 
+        /**
+         * Switch between dashboard tabs (Predictions, Charts, API Docs)
+         * @param {string} tabName - Tab identifier (predictions|charts|api)
+         */
         function switchTab(tabName) {
+            // Remove active class from all tabs and buttons
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            
+            // Activate selected tab
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
 
+            // Load chart if switching to charts tab (slight delay for rendering)
             if (tabName === 'charts') {
                 setTimeout(loadChart, 100);
             }
         }
 
+        /**
+         * Check application health status
+         * Updates status badge based on model availability
+         */
         function checkHealth() {
             fetch('/api/health')
                 .then(r => {
@@ -552,6 +608,10 @@ SUPABASE_KEY=your-api-key</div>
                 });
         }
 
+        /**
+         * Sync sensor data from Supabase database
+         * Fetches latest readings and updates local cache
+         */
         function syncData() {
             showAlert('🔄 Syncing data from Supabase...', 'info');
             
@@ -560,8 +620,8 @@ SUPABASE_KEY=your-api-key</div>
                 .then(data => {
                     if (data.success) {
                         showAlert(`✅ ${data.message}`, 'success');
-                        getDataInfo();
-                        loadModelsStatus();
+                        getDataInfo();  // Refresh statistics
+                        loadModelsStatus();  // Update model status
                     } else {
                         showAlert(`❌ Sync failed: ${data.error}`, 'error');
                     }
@@ -569,6 +629,10 @@ SUPABASE_KEY=your-api-key</div>
                 .catch(err => showAlert(`❌ Error: ${err.message}`, 'error'));
         }
 
+        /**
+         * Generate predictions for all soil parameters
+         * Calls backend API and displays forecast results
+         */
         function makePrediction() {
             showAlert('🔮 Making predictions...', 'info');
             fetch('/api/predict', { method: 'POST' })
@@ -584,6 +648,10 @@ SUPABASE_KEY=your-api-key</div>
                 .catch(err => showAlert(`❌ Error: ${err.message}`, 'error'));
         }
 
+        /**
+         * Load and display status of all LSTM models
+         * Shows which models are loaded and their metadata
+         */
         function loadModelsStatus() {
             fetch('/api/model-status')
                 .then(r => r.json())
@@ -610,6 +678,10 @@ SUPABASE_KEY=your-api-key</div>
                 });
         }
 
+        /**
+         * Fetch and display data statistics from Supabase
+         * Shows mean, current values, and data point count
+         */
         function getDataInfo() {
             fetch('/api/data-info')
                 .then(r => r.json())
@@ -642,6 +714,10 @@ SUPABASE_KEY=your-api-key</div>
                 });
         }
 
+        /**
+         * Load historical data chart for selected parameter
+         * Fetches data from API and renders using Chart.js
+         */
         function loadChart() {
             const param = document.getElementById('parameterSelect').value;
             
@@ -657,6 +733,12 @@ SUPABASE_KEY=your-api-key</div>
                 .catch(err => showAlert(`❌ Failed to load chart: ${err.message}`, 'error'));
         }
 
+        /**
+         * Render time series chart using Chart.js
+         * @param {string} title - Chart title (parameter display name)
+         * @param {Array<number>} values - Data values to plot
+         * @param {Array<number>} indices - X-axis indices (time points)
+         */
         function renderChart(title, values, indices) {
             const ctx = document.getElementById('historyChart').getContext('2d');
             
@@ -688,6 +770,10 @@ SUPABASE_KEY=your-api-key</div>
             });
         }
 
+        /**
+         * Display prediction results in card grid format
+         * @param {Object} predictions - Prediction data from API
+         */
         function displayPredictions(predictions) {
             const container = document.getElementById('predictionsContainer');
             container.innerHTML = '';
@@ -736,6 +822,11 @@ SUPABASE_KEY=your-api-key</div>
             }
         }
 
+        /**
+         * Display alert message to user
+         * @param {string} message - Message text to display
+         * @param {string} type - Alert type (success|error|info)
+         */
         function showAlert(message, type) {
             const container = document.getElementById('alertContainer');
             const alert = document.createElement('div');
@@ -744,6 +835,7 @@ SUPABASE_KEY=your-api-key</div>
             container.innerHTML = '';
             container.appendChild(alert);
             
+            // Auto-dismiss after 3 seconds (except errors)
             if (type !== 'error') {
                 setTimeout(() => alert.remove(), 3000);
             }
