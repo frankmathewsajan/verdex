@@ -37,6 +37,7 @@ from sklearn.preprocessing import MinMaxScaler
 import warnings
 import json
 from supabase import create_client, Client
+from typing import Optional
 
 # Suppress TensorFlow and other library warnings for cleaner output
 warnings.filterwarnings('ignore')
@@ -56,10 +57,10 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # Falls back to default values for development (should use env vars in production)
 SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://kdlhvlpoldivrweyjrfg.supabase.co')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtkbGh2bHBvbGRpdnJ3ZXlqcmZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1Njg5MTAsImV4cCI6MjA3NzE0NDkxMH0.7_yB6XjWT5uT7OYIx7CfPMd-3QC1EtcPJmKeoyhFylw')
-
 # Initialize Supabase client with error handling
+supabase: Optional[Client] = None
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("✅ Supabase client initialized")
 except Exception as e:
     print(f"⚠️  Supabase connection warning: {e}")
